@@ -36,7 +36,7 @@ public class TestingHelpersBuild extends Project {
         pkg = "rife.bld.extension";
         name = "Extensions Testing Helpers";
         archiveBaseName = "bld-extensions-testing-helpers";
-        version = version(1, 0, 1);
+        version = version(1, 1, 0, "SNAPSHOT");
 
         javaRelease = 17;
 
@@ -45,7 +45,7 @@ public class TestingHelpersBuild extends Project {
 
         repositories = List.of(MAVEN_CENTRAL, RIFE2_RELEASES, RIFE2_SNAPSHOTS);
 
-        var junit = version(6, 0, 3);
+        var junit = version(6, 1, 0);
         var junitJupiter = dependency("org.junit.jupiter", "junit-jupiter", junit);
         var junitPlatform = dependency("org.junit.platform", "junit-platform-console-standalone", junit);
 
@@ -111,9 +111,9 @@ public class TestingHelpersBuild extends Project {
     @BuildCommand(summary = "Runs PMD analysis")
     public void pmd() throws Exception {
         new PmdOperation()
-                .fromProject(this)
                 .failOnViolation(true)
                 .ruleSets("config/pmd.xml")
+                .fromProject(this)
                 .execute();
     }
 
