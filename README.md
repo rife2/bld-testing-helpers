@@ -23,9 +23,19 @@ scope(test).include(
 Please check the [documentation](https://rife2.github.io/bld-extensions-testing-helpers)
 for more information.
 
-## JUnit Annotations
+## Annotations
 
 The following annotations are provided:
+
+| Annotation                                                                                                                      | Description                                                         |
+|:--------------------------------------------------------------------------------------------------------------------------------|:--------------------------------------------------------------------|
+| [`VisibleForTesting`](https://rife2.github.io/bld-extensions-testing-helpers/rife/bld/extension/testing/VisibleForTesting.html) | Indicates that a class member's visibility has been relaxed testing |
+
+
+
+## JUnit Annotations
+
+The following JUnit annotations are provided:
 
 | Annotation                                                                                                              | Description                                         |
 |:------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------|
