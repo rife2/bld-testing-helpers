@@ -16,6 +16,7 @@
 
 package rife.bld.testing;
 
+import org.junit.jupiter.api.TestTemplate;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.lang.annotation.ElementType;
@@ -49,8 +50,9 @@ import java.lang.annotation.Target;
  * @see RetryExtension
  * @since 1.0
  */
-@Target(ElementType.METHOD)
+@Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
 @Retention(RetentionPolicy.RUNTIME)
+@TestTemplate
 @ExtendWith(RetryExtension.class)
 public @interface RetryTest {
 

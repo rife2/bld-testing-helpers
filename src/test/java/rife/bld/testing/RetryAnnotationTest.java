@@ -109,12 +109,14 @@ class RetryAnnotationTest {
         }
 
         @Test
-        void hasCorrectTargetElement() {
+        void hasCorrectTargetElements() {
             var annotation = RetryTest.class.getAnnotation(Target.class);
 
             assertNotNull(annotation);
-            assertEquals(1, annotation.value().length);
+            assertEquals(2, annotation.value().length);
             assertEquals(ElementType.METHOD, annotation.value()[0]);
+            assertEquals(ElementType.ANNOTATION_TYPE, annotation.value()[1]);
+
         }
 
         @Test

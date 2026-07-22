@@ -16,107 +16,105 @@
 
 package rife.bld.testing;
 
-import org.junit.jupiter.api.extension.ExtensionContext;
-import org.junit.jupiter.api.extension.TestExecutionExceptionHandler;
+import org.junit.jupiter.api.extension.*;
 
-import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.stream.Stream;
 
 /**
- * JUnit extension that handles retry logic for test methods annotated
- * with the {@link RetryTest @RetryTest} annotation.
+ * JUnit extension that retries a failing {@link RetryTest} method.
  * <p>
- * This extension will execute a test method multiple times on failure
- * based on the parameters specified in the {@link RetryTest @RetryTest}
- * annotation. It also supports adding a delay between retries to allow
- * external systems or resources to stabilize.
+ * Implements {@link TestTemplateInvocationContextProvider} and {@link InvocationInterceptor}
+ * to integrate with {@code @TestTemplate}. The test is retried up to {@link RetryTest#value()}
+ * times with an optional {@link RetryTest#delay()} in seconds.
  * <p>
- * The extension uses {@link TestExecutionExceptionHandler} to intercept
- * and handle exceptions thrown during test execution. If the test succeeds
- * in any of the retry attempts, it is marked as passed. Otherwise, the
- * last exception thrown is re-thrown to indicate failure.
- * <p>
- * Features:
- * <ul>
- * <li>Retries a test upon failure, up to the specified maximum attempts.</li>
- * <li>Optionally introduces a delay between retry attempts.</li>
- * <li>Reports the failure count and exception details for each retry on the console.</li>
- * </ul>
- * <p>
- * Exceptions encountered during the retry process are carefully handled:
- * <ul>
- * <li>If a retry is interrupted during the delay, the thread is re-interrupted,
- * and the {@link InterruptedException} is added as a suppressed exception.</li>
- * <li>The original or last exception encountered is re-thrown when retries are exhausted.</li>
- * </ul>
- * <p>
- * This extension operates on individual test methods and requires them
- * to be annotated with {@link RetryTest @RetryTest} to activate the retry logic.
- * <p>
- * <strong>Note:</strong> Runtime exceptions during retries, such as {@link InvocationTargetException},
- * are unwrapped to reveal the underlying cause.
+ * If a retry succeeds, the test passes. If all retries fail, the last exception is thrown.
  *
  * @author <a href="https://erik.thauvin.net/">Erik C. Thauvin</a>
  * @author <a href="https://glaforge.dev/posts/2024/09/01/a-retryable-junit-5-extension/">Guillaume Laforge</a>
+ * @see RetryTest
  * @since 1.0
  */
-public class RetryExtension implements TestExecutionExceptionHandler {
+public class RetryExtension implements TestTemplateInvocationContextProvider, InvocationInterceptor {
 
     /**
-     * Handles test execution exceptions, allowing retry mechanisms for a test method
-     * annotated with {@link RetryTest @RetryTest}. This method retries the test execution
-     * up to a specified number of attempts and introduces optional delays between retries.
-     * <p>
-     * If the test is not annotated with {@link RetryTest @RetryTest}, the exception is
-     * rethrown immediately. If all retry attempts fail, the last exception is thrown.
+     * Intercepts the test template method execution to implement retry logic.
      *
-     * @param extensionContext the context in which the current test is executed,
-     *                         providing information about the test method and instance
-     * @param throwable        the exception thrown during the initial execution of the test
-     * @throws Throwable if the test exhausts all retry attempts or is not eligible for retry
+     * @param invocation        the invocation to proceed
+     * @param invocationContext the reflective invocation context
+     * @param extensionContext  the extension context
+     * @throws Throwable if all retries are exhausted
      */
     @Override
-    @SuppressWarnings("PMD.DoNotUseThreads")
-    public void handleTestExecutionException(ExtensionContext extensionContext, Throwable throwable) throws Throwable {
-        var testMethodOpt = extensionContext.getTestMethod();
-        if (testMethodOpt.isEmpty()) {
-            throw throwable;
+    @SuppressWarnings({"PMD.DoNotUseThreads", "PMD.AvoidCatchingGenericException"})
+    public void interceptTestTemplateMethod(Invocation<Void> invocation,
+                                            ReflectiveInvocationContext<Method> invocationContext,
+                                            ExtensionContext extensionContext) throws Throwable {
+        var methodOpt = extensionContext.getTestMethod();
+        if (methodOpt.isEmpty()) {
+            invocation.proceed();
+            return;
         }
-        var method = testMethodOpt.get();
-        var retryTest = method.getAnnotation(RetryTest.class);
 
+        var retryTest = methodOpt.get().getAnnotation(RetryTest.class);
         if (retryTest == null) {
-            throw throwable;
+            invocation.proceed();
+            return;
         }
 
         int maxExecutions = retryTest.value();
+        if (maxExecutions < 1) {
+            throw new ExtensionConfigurationException(
+                    "@RetryTest value must be >= 1, but was " + maxExecutions);
+        }
+
         int delaySeconds = retryTest.delay();
-        var lastThrown = throwable;
+        Throwable lastThrown = null;
 
-        for (var i = 1; i < maxExecutions; i++) {
-            printError(lastThrown, i);
-
-            if (delaySeconds > 0) {
-                try {
-                    Thread.sleep(delaySeconds * 1000L);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    lastThrown.addSuppressed(e);
-                    throw lastThrown;
-                }
-            }
-
+        for (var i = 1; i <= maxExecutions; i++) {
             try {
-                method.invoke(extensionContext.getRequiredTestInstance());
+                invocation.proceed();
                 // Succeeded, so return and mark the test as passed.
                 return;
-            } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-                lastThrown = e;
+            } catch (Throwable t) {
+                lastThrown = t;
+                if (i < maxExecutions) {
+                    printError(lastThrown, i);
+                    if (delaySeconds > 0) {
+                        try {
+                            Thread.sleep(delaySeconds * 1000L);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            lastThrown.addSuppressed(e);
+                            throw lastThrown;
+                        }
+                    }
+                }
             }
-
         }
 
         printError(lastThrown, maxExecutions);
         throw lastThrown;
+    }
+
+    @Override
+    public boolean supportsTestTemplate(ExtensionContext context) {
+        return context.getTestMethod()
+                .map(m -> m.isAnnotationPresent(RetryTest.class))
+                .orElse(false);
+    }
+
+    @Override
+    public Stream<TestTemplateInvocationContext> provideTestTemplateInvocationContexts(ExtensionContext context) {
+        var method = context.getRequiredTestMethod();
+        var retry = method.getAnnotation(RetryTest.class);
+
+        return Stream.of(new TestTemplateInvocationContext() {
+            @Override
+            public String getDisplayName(int invocationIndex) {
+                return retry.name().isEmpty() ? method.getName() : retry.name();
+            }
+        });
     }
 
     private String getMessageRecursively(Throwable e) {
@@ -126,12 +124,15 @@ public class RetryExtension implements TestExecutionExceptionHandler {
         if (e.getLocalizedMessage() != null) {
             return e.getLocalizedMessage() + " [" + e.getClass().getName() + "]";
         }
+        if (e.getCause() == null || e.getCause().equals(e)) {
+            return "No message [" + e.getClass().getName() + "]";
+        }
         return getMessageRecursively(e.getCause());
     }
 
     @SuppressWarnings("PMD.SystemPrintln")
     private void printError(Throwable e, int count) {
-        String message = getMessageRecursively(e);
+        var message = getMessageRecursively(e);
         System.err.printf("Retry #%d failed (%s thrown): %s%n", count, e.getClass().getName(), message);
     }
 }

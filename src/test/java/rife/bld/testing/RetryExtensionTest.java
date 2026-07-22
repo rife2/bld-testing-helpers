@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     https://www.apache.org/licenses/LICENSE-2.0
+ * https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,10 +18,12 @@ package rife.bld.testing;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtensionConfigurationException;
 import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.api.extension.InvocationInterceptor.Invocation;
+import org.junit.jupiter.api.extension.ReflectiveInvocationContext;
 
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -29,12 +31,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-@SuppressWarnings({"PMD.AvoidDuplicateLiterals", "PMD.DoNotUseThreads"})
+@SuppressWarnings({"PMD.AvoidDuplicateLiterals", "PMD.DoNotUseThreads", "PMD.AvoidThrowingRawExceptionTypes"})
 class RetryExtensionTest {
 
     private final ExtensionContext mockExtensionContext = mock(ExtensionContext.class);
+    @SuppressWarnings("unchecked")
+    private final Invocation<Void> mockInvocation = mock(Invocation.class);
+    @SuppressWarnings("unchecked")
+    private final ReflectiveInvocationContext<Method> mockInvocationContext = mock(ReflectiveInvocationContext.class);
     private final RetryTest mockRetryTest = mock(RetryTest.class);
-    private final Object mockTestInstance = new Object();
     private final Method mockTestMethod = mock(Method.class);
     private RetryExtension retryExtension;
 
@@ -42,185 +47,212 @@ class RetryExtensionTest {
     void beforeEach() {
         retryExtension = new RetryExtension();
         when(mockExtensionContext.getTestMethod()).thenReturn(Optional.of(mockTestMethod));
-        when(mockExtensionContext.getRequiredTestInstance()).thenReturn(mockTestInstance);
+        when(mockExtensionContext.getRequiredTestMethod()).thenReturn(mockTestMethod);
         when(mockTestMethod.getAnnotation(RetryTest.class)).thenReturn(mockRetryTest);
+        when(mockTestMethod.isAnnotationPresent(RetryTest.class)).thenReturn(true);
+        when(mockRetryTest.name()).thenReturn("");
+    }
+
+    @Test
+    void invalidValue() {
+        when(mockRetryTest.value()).thenReturn(0);
+
+        assertThrows(ExtensionConfigurationException.class, () ->
+                retryExtension.interceptTestTemplateMethod(mockInvocation, mockInvocationContext, mockExtensionContext));
     }
 
     @Test
     void noRetryAnnotation() throws Throwable {
         when(mockTestMethod.getAnnotation(RetryTest.class)).thenReturn(null);
-        var initialException = new RuntimeException("Initial failure");
+        when(mockTestMethod.isAnnotationPresent(RetryTest.class)).thenReturn(false);
 
-        var thrown = assertThrows(RuntimeException.class, () ->
-                retryExtension.handleTestExecutionException(mockExtensionContext, initialException));
+        retryExtension.interceptTestTemplateMethod(mockInvocation, mockInvocationContext, mockExtensionContext);
 
-        assertSame(initialException, thrown);
-        verify(mockTestMethod, never()).invoke(any(), any());
+        verify(mockInvocation, times(1)).proceed();
     }
 
     @Test
-    void noTestMethod() {
+    void noTestMethod() throws Throwable {
         when(mockExtensionContext.getTestMethod()).thenReturn(Optional.empty());
-        var initialException = new RuntimeException("Initial failure");
 
-        var thrown = assertThrows(RuntimeException.class, () ->
-                retryExtension.handleTestExecutionException(mockExtensionContext, initialException));
+        retryExtension.interceptTestTemplateMethod(mockInvocation, mockInvocationContext, mockExtensionContext);
 
-        assertSame(initialException, thrown);
-        verifyNoInteractions(mockTestMethod);
+        verify(mockInvocation, times(1)).proceed();
+    }
+
+    @Test
+    void provideTestTemplateInvocationContexts() {
+        when(mockRetryTest.name()).thenReturn("");
+        when(mockTestMethod.getName()).thenReturn("testFoo");
+
+        var contexts = retryExtension.provideTestTemplateInvocationContexts(mockExtensionContext).toList();
+        assertEquals(1, contexts.size());
+        assertEquals("testFoo", contexts.get(0).getDisplayName(1));
+
+        when(mockRetryTest.name()).thenReturn("custom name");
+        contexts = retryExtension.provideTestTemplateInvocationContexts(mockExtensionContext).toList();
+        assertEquals("custom name", contexts.get(0).getDisplayName(1));
     }
 
     @Test
     void retryExhausted() throws Throwable {
         when(mockRetryTest.value()).thenReturn(3);
-
         var runtimeException = new RuntimeException("Simulated failure");
-        doThrow(new InvocationTargetException(runtimeException)).when(mockTestMethod).invoke(mockTestInstance);
+        doThrow(runtimeException).when(mockInvocation).proceed();
 
-        var thrown = assertThrows(InvocationTargetException.class, () ->
-                retryExtension.handleTestExecutionException(mockExtensionContext, new RuntimeException("Initial failure")));
+        var thrown = assertThrows(RuntimeException.class, () ->
+                retryExtension.interceptTestTemplateMethod(mockInvocation, mockInvocationContext, mockExtensionContext));
 
-        assertSame(runtimeException, thrown.getTargetException());
-        verify(mockTestMethod, times(2)).invoke(mockTestInstance);
+        assertSame(runtimeException, thrown);
+        verify(mockInvocation, times(3)).proceed();
     }
 
     @Test
-    @SuppressWarnings("PMD.AvoidThrowingRawExceptionTypes")
     void retrySuccess() throws Throwable {
         when(mockRetryTest.value()).thenReturn(3);
-
         var callCount = new AtomicInteger(0);
 
-        doAnswer(invocation -> {
+        doAnswer(inv -> {
             if (callCount.incrementAndGet() < 2) {
-                throw new InvocationTargetException(new RuntimeException("Simulated failure"));
+                throw new RuntimeException("Simulated failure");
             }
             return null;
-        }).when(mockTestMethod).invoke(mockTestInstance);
+        }).when(mockInvocation).proceed();
 
-        assertDoesNotThrow(() -> retryExtension.handleTestExecutionException(mockExtensionContext, new RuntimeException("Initial failure")));
+        assertDoesNotThrow(() ->
+                retryExtension.interceptTestTemplateMethod(mockInvocation, mockInvocationContext, mockExtensionContext));
 
-        verify(mockTestMethod, times(2)).invoke(mockTestInstance);
-        assertEquals(2, callCount.get());
+        verify(mockInvocation, times(2)).proceed();
     }
 
     @Test
     void retrySuccessWithCheckedException() throws Throwable {
         when(mockRetryTest.value()).thenReturn(3);
-
         var callCount = new AtomicInteger(0);
 
-        doAnswer(invocation -> {
+        doAnswer(inv -> {
             if (callCount.incrementAndGet() < 2) {
-                throw new InvocationTargetException(new IOException("Simulated failure"));
+                throw new IOException("Simulated failure");
             }
             return null;
-        }).when(mockTestMethod).invoke(mockTestInstance);
+        }).when(mockInvocation).proceed();
 
-        assertDoesNotThrow(() -> retryExtension.handleTestExecutionException(mockExtensionContext, new RuntimeException("Initial failure")));
+        assertDoesNotThrow(() ->
+                retryExtension.interceptTestTemplateMethod(mockInvocation, mockInvocationContext, mockExtensionContext));
 
-        verify(mockTestMethod, times(2)).invoke(mockTestInstance);
-        assertEquals(2, callCount.get());
+        verify(mockInvocation, times(2)).proceed();
+    }
+
+    @Test
+    void retryWithCauseChain() throws Throwable {
+        when(mockRetryTest.value()).thenReturn(1);
+        var root = new IOException("root");
+        var wrapper = new RuntimeException(null, root);
+        doThrow(wrapper).when(mockInvocation).proceed();
+
+        var thrown = assertThrows(RuntimeException.class, () ->
+                retryExtension.interceptTestTemplateMethod(mockInvocation, mockInvocationContext, mockExtensionContext));
+
+        assertSame(wrapper, thrown);
     }
 
     @Test
     void retryWithCheckedException() throws Throwable {
         when(mockRetryTest.value()).thenReturn(3);
-
         var checkedException = new IOException("Simulated failure");
-        doThrow(new InvocationTargetException(checkedException)).when(mockTestMethod).invoke(mockTestInstance);
+        doThrow(checkedException).when(mockInvocation).proceed();
 
-        var thrown = assertThrows(InvocationTargetException.class, () ->
-                retryExtension.handleTestExecutionException(mockExtensionContext, new RuntimeException("Initial failure")));
+        var thrown = assertThrows(IOException.class, () ->
+                retryExtension.interceptTestTemplateMethod(mockInvocation, mockInvocationContext, mockExtensionContext));
 
-        assertSame(checkedException, thrown.getTargetException());
-        verify(mockTestMethod, times(2)).invoke(mockTestInstance);
+        assertSame(checkedException, thrown);
+        verify(mockInvocation, times(3)).proceed();
     }
 
     @Test
     void retryWithDelayExhausted() throws Throwable {
         when(mockRetryTest.value()).thenReturn(2);
         when(mockRetryTest.delay()).thenReturn(1);
-
         var runtimeException = new RuntimeException("Simulated failure");
-        doThrow(new InvocationTargetException(runtimeException)).when(mockTestMethod).invoke(mockTestInstance);
+        doThrow(runtimeException).when(mockInvocation).proceed();
 
         var startTime = System.currentTimeMillis();
-        var thrown = assertThrows(InvocationTargetException.class, () ->
-                retryExtension.handleTestExecutionException(mockExtensionContext, new RuntimeException("Initial failure")));
+        assertThrows(RuntimeException.class, () ->
+                retryExtension.interceptTestTemplateMethod(mockInvocation, mockInvocationContext, mockExtensionContext));
         var duration = System.currentTimeMillis() - startTime;
 
-        assertSame(runtimeException, thrown.getTargetException());
-        verify(mockTestMethod, times(1)).invoke(mockTestInstance);
-        assertTrue(duration >= 1000, "Expected delay of at least 1000ms, but was " + duration + "ms");
+        verify(mockInvocation, times(2)).proceed();
+        assertTrue(duration >= 1000, "Expected delay >= 1000ms, was " + duration);
     }
 
     @Test
-    @SuppressWarnings("PMD.AvoidThrowingRawExceptionTypes")
     void retryWithDelaySuccess() throws Throwable {
         when(mockRetryTest.value()).thenReturn(3);
         when(mockRetryTest.delay()).thenReturn(1);
-
         var callCount = new AtomicInteger(0);
-        doAnswer(invocation -> {
+        doAnswer(inv -> {
             if (callCount.incrementAndGet() < 2) {
-                throw new InvocationTargetException(new RuntimeException("Simulated failure"));
+                throw new RuntimeException("Simulated failure");
             }
             return null;
-        }).when(mockTestMethod).invoke(mockTestInstance);
+        }).when(mockInvocation).proceed();
 
         var startTime = System.currentTimeMillis();
-        assertDoesNotThrow(() -> retryExtension.handleTestExecutionException(mockExtensionContext, new RuntimeException("Initial failure")));
+        assertDoesNotThrow(() ->
+                retryExtension.interceptTestTemplateMethod(mockInvocation, mockInvocationContext, mockExtensionContext));
         var duration = System.currentTimeMillis() - startTime;
 
-        verify(mockTestMethod, times(2)).invoke(mockTestInstance);
-        assertTrue(duration >= 1000, "Expected delay of at least 1000ms, but was " + duration + "ms");
+        verify(mockInvocation, times(2)).proceed();
+        assertTrue(duration >= 1000, "Expected delay >= 1000ms, was " + duration);
     }
 
     @Test
-    void retryWithInterruptedDelay() {
+    void retryWithInterruptedDelay() throws Throwable {
         when(mockRetryTest.value()).thenReturn(2);
-        when(mockRetryTest.delay()).thenReturn(5); // 5 seconds
-
+        when(mockRetryTest.delay()).thenReturn(5);
         var initialException = new RuntimeException("Initial");
+        doThrow(initialException).when(mockInvocation).proceed();
 
-        // Interrupt the thread during the delay
         var testThread = Thread.currentThread();
         new Thread(() -> {
             try {
-                Thread.sleep(500); // Wait for the extension to enter the delay
+                Thread.sleep(500);
                 testThread.interrupt();
             } catch (InterruptedException ignored) {
-                // ignore
             }
         }).start();
 
         var thrown = assertThrows(RuntimeException.class, () ->
-                retryExtension.handleTestExecutionException(mockExtensionContext, initialException));
+                retryExtension.interceptTestTemplateMethod(mockInvocation, mockInvocationContext, mockExtensionContext));
 
-        // Verify the original exception was thrown with the InterruptedException as a suppressed exception
         assertSame(initialException, thrown);
         assertEquals(1, thrown.getSuppressed().length);
         assertInstanceOf(InterruptedException.class, thrown.getSuppressed()[0]);
-
-        // Verify that the interrupted status of the thread is true
-        assertTrue(Thread.currentThread().isInterrupted(), "Thread should be interrupted");
-        // Clear the interrupted status for more tests
-        var ignored = Thread.interrupted();
+        assertTrue(Thread.currentThread().isInterrupted());
+        Thread.interrupted(); // clear
     }
 
     @Test
-    void retryWithNonInvocationTargetException() throws Throwable {
-        when(mockRetryTest.value()).thenReturn(3);
+    void retryWithNoMessageException() throws Throwable {
+        when(mockRetryTest.value()).thenReturn(1);
+        var noMessageEx = new RuntimeException();
+        doThrow(noMessageEx).when(mockInvocation).proceed();
 
-        var runtimeException = new IllegalArgumentException("Simulated direct failure");
-        doThrow(runtimeException).when(mockTestMethod).invoke(mockTestInstance);
+        var thrown = assertThrows(RuntimeException.class, () ->
+                retryExtension.interceptTestTemplateMethod(mockInvocation, mockInvocationContext, mockExtensionContext));
 
-        var thrown = assertThrows(IllegalArgumentException.class, () ->
-                retryExtension.handleTestExecutionException(mockExtensionContext,
-                        new IllegalArgumentException("Initial failure")));
+        assertSame(noMessageEx, thrown);
+        verify(mockInvocation, times(1)).proceed();
+    }
 
-        assertSame(runtimeException, thrown);
-        verify(mockTestMethod, times(2)).invoke(mockTestInstance);
+    @Test
+    void supportsTestTemplate() {
+        assertTrue(retryExtension.supportsTestTemplate(mockExtensionContext));
+
+        when(mockTestMethod.isAnnotationPresent(RetryTest.class)).thenReturn(false);
+        assertFalse(retryExtension.supportsTestTemplate(mockExtensionContext));
+
+        when(mockExtensionContext.getTestMethod()).thenReturn(Optional.empty());
+        assertFalse(retryExtension.supportsTestTemplate(mockExtensionContext));
     }
 }
