@@ -34,15 +34,16 @@ The following annotations are provided:
 
 The following JUnit annotations are provided:
 
-| Annotation                                                                                                              | Description                                         |
+| Annotation                                                                                                               | Description                                          |
 |:------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------|
-| [`CaptureOutput`](https://rife2.github.io/bld-testing-helpers/rife/bld/extension/testing/CaptureOutput.html) | Capture stdout and stderr output                    |
-| [`CouldFail`](https://rife2.github.io/bld-testing-helpers/rife/bld/extension/testing/CouldFail.html)         | Allows a test to fail                               |
-| [`DisabledOnCi`](https://rife2.github.io/bld-testing-helpers/rife/bld/extension/testing/DisabledOnCi.html)   | Disables a test when running in a CI/CD environment |
-| [`EnabledOnCi`](https://rife2.github.io/bld-testing-helpers/rife/bld/extension/testing/EnabledOnCi.html)     | Enables a test when running in a CI/CD environment  |
-| [`RandomRange`](https://rife2.github.io/bld-testing-helpers/rife/bld/extension/testing/RandomRange.html)     | Generates a random integer within a specified range |
-| [`RandomString`](https://rife2.github.io/bld-testing-helpers/rife/bld/extension/testing/RandomString.html)   | Generates a random string                           |
-| [`RetryTest`](https://rife2.github.io/bld-testing-helpers/rife/bld/extension/testing/RetryTest.html)         | Retry test on failure                               |
+| [`BlankSource`](https://rife2.github.io/bld-testing-helpers/rife/bld/testing/BlankSource.html)                           | Provides blank string values for parameterized tests |
+| [`CaptureOutput`](https://rife2.github.io/bld-testing-helpers/rife/bld/extension/testing/CaptureOutput.html)             | Capture stdout and stderr output                     |
+| [`CouldFail`](https://rife2.github.io/bld-testing-helpers/rife/bld/extension/testing/CouldFail.html)                     | Allows a test to fail                                |
+| [`DisabledOnCi`](https://rife2.github.io/bld-testing-helpers/rife/bld/extension/testing/DisabledOnCi.html)               | Disables a test when running in a CI/CD environment  |
+| [`EnabledOnCi`](https://rife2.github.io/bld-testing-helpers/rife/bld/extension/testing/EnabledOnCi.html)                 | Enables a test when running in a CI/CD environment   |
+| [`RandomRange`](https://rife2.github.io/bld-testing-helpers/rife/bld/extension/testing/RandomRange.html)                 | Generates a random integer within a specified range  |
+| [`RandomString`](https://rife2.github.io/bld-testing-helpers/rife/bld/extension/testing/RandomString.html)               | Generates a random string                            |
+| [`RetryTest`](https://rife2.github.io/bld-testing-helpers/rife/bld/extension/testing/RetryTest.html)                     | Retry test on failure                                |
 
 ## JUnit Extensions
 
