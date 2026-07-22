@@ -5,7 +5,7 @@
             "type": "java",
             "name": "Run Tests",
             "request": "launch",
-            "mainClass": "rife.bld.extension.TestingHelpersTest"
+            "mainClass": "rife.bld.TestingHelpersTest"
         }
     ]
 }

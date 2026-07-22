@@ -14,4 +14,4 @@
 # limitations under the License.
 #
 
-rife.bld.extension.testing.LoggingExtension
+rife.bld.testing.LoggingExtension

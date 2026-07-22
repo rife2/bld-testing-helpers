@@ -4,13 +4,13 @@ If you want to contribute to this project, all you have to do is clone the GitHu
 repository:
 
 ```console
-git clone git@github.com:ethauvin/bld-extensions-testing-helpers.git
+git clone git@github.com:ethauvin/bld-testing-helpers.git
 ```
 
 Then use [bld](https://rife2.com/bld) to build:
 
 ```console
-cd bld-extensions-testing-helpers
+cd bld-testing-helpers
 ./bld compile
 ```
 

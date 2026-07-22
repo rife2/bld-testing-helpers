@@ -7,7 +7,7 @@
       <entry_point TYPE="field" FQNAME="rife.bld.extension.testing.RandomStringResolverTests.FieldInjection$4TestClass staticField" />
     </entry_points>
     <list size="1">
-      <item index="0" class="java.lang.String" itemvalue="rife.bld.extension.testing.RandomRange" />
+      <item index="0" class="java.lang.String" itemvalue="rife.bld.testing.RandomRange" />
     </list>
     <pattern value="rife.bld.extension.testing.TestLogHandlerTests.ClearFunctionalityTests" />
     <pattern value="rife.bld.extension.testing.DisabledOnCi" />
