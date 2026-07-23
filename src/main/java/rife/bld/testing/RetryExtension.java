@@ -28,6 +28,9 @@ import java.util.stream.Stream;
  * to integrate with {@code @TestTemplate}. The test is retried up to {@link RetryTest#value()}
  * times with an optional {@link RetryTest#delay()} in seconds.
  * <p>
+ * If {@link RetryTest#withExceptions()} is specified, only matching exception types
+ * (including causes in the cause chain) will trigger a retry.
+ * <p>
  * If a retry succeeds, the test passes. If all retries fail, the last exception is thrown.
  *
  * @author <a href="https://erik.thauvin.net/">Erik C. Thauvin</a>
@@ -37,14 +40,6 @@ import java.util.stream.Stream;
  */
 public class RetryExtension implements TestTemplateInvocationContextProvider, InvocationInterceptor {
 
-    /**
-     * Intercepts the test template method execution to implement retry logic.
-     *
-     * @param invocation        the invocation to proceed
-     * @param invocationContext the reflective invocation context
-     * @param extensionContext  the extension context
-     * @throws Throwable if all retries are exhausted
-     */
     @Override
     @SuppressWarnings({"PMD.DoNotUseThreads", "PMD.AvoidCatchingGenericException"})
     public void interceptTestTemplateMethod(Invocation<Void> invocation,
@@ -74,10 +69,15 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
         for (var i = 1; i <= maxExecutions; i++) {
             try {
                 invocation.proceed();
-                // Succeeded, so return and mark the test as passed.
                 return;
             } catch (Throwable t) {
                 lastThrown = t;
+
+                // If exception is not accepted for retry, fail fast
+                if (!shouldRetry(retryTest, t)) {
+                    throw t;
+                }
+
                 if (i < maxExecutions) {
                     printError(lastThrown, i);
                     if (delaySeconds > 0) {
@@ -130,9 +130,33 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
         return getMessageRecursively(e.getCause());
     }
 
+    private boolean matchesCauseChain(Class<? extends Throwable> type, Throwable throwable) {
+        var current = throwable;
+        while (current != null) {
+            if (type.isInstance(current)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
     @SuppressWarnings("PMD.SystemPrintln")
     private void printError(Throwable e, int count) {
         var message = getMessageRecursively(e);
         System.err.printf("Retry #%d failed (%s thrown): %s%n", count, e.getClass().getName(), message);
+    }
+
+    private boolean shouldRetry(RetryTest retryTest, Throwable throwable) {
+        var withExceptions = retryTest.withExceptions();
+        if (withExceptions == null || withExceptions.length == 0) {
+            return true;
+        }
+        for (var exceptionType : withExceptions) {
+            if (exceptionType != null && matchesCauseChain(exceptionType, throwable)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * https://www.apache.org/licenses/LICENSE-2.0
+ *     https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -51,6 +51,10 @@ class RetryExtensionTest {
         when(mockTestMethod.getAnnotation(RetryTest.class)).thenReturn(mockRetryTest);
         when(mockTestMethod.isAnnotationPresent(RetryTest.class)).thenReturn(true);
         when(mockRetryTest.name()).thenReturn("");
+        when(mockRetryTest.value()).thenReturn(3);
+        when(mockRetryTest.delay()).thenReturn(0);
+        //noinspection unchecked
+        when(mockRetryTest.withExceptions()).thenReturn(new Class[0]);
     }
 
     @Test
@@ -229,7 +233,42 @@ class RetryExtensionTest {
         assertEquals(1, thrown.getSuppressed().length);
         assertInstanceOf(InterruptedException.class, thrown.getSuppressed()[0]);
         assertTrue(Thread.currentThread().isInterrupted());
+        //noinspection ResultOfMethodCallIgnored
         Thread.interrupted(); // clear
+    }
+
+    @Test
+    void retryWithMatchingCauseInChain() throws Throwable {
+        //noinspection unchecked
+        when(mockRetryTest.withExceptions()).thenReturn(new Class[]{IOException.class});
+        var root = new IOException("root");
+        var wrapper = new RuntimeException(root);
+        var callCount = new AtomicInteger(0);
+        doAnswer(inv -> {
+            if (callCount.incrementAndGet() < 2) {
+                throw wrapper;
+            }
+            return null;
+        }).when(mockInvocation).proceed();
+
+        assertDoesNotThrow(() ->
+                retryExtension.interceptTestTemplateMethod(mockInvocation, mockInvocationContext, mockExtensionContext));
+
+        verify(mockInvocation, times(2)).proceed();
+    }
+
+    @Test
+    void retryWithMatchingException() throws Throwable {
+        //noinspection unchecked
+        when(mockRetryTest.withExceptions()).thenReturn(new Class[]{IOException.class});
+        var ioEx = new IOException("io");
+        doThrow(ioEx).when(mockInvocation).proceed();
+
+        var thrown = assertThrows(IOException.class, () ->
+                retryExtension.interceptTestTemplateMethod(mockInvocation, mockInvocationContext, mockExtensionContext));
+
+        assertSame(ioEx, thrown);
+        verify(mockInvocation, times(3)).proceed(); // retried
     }
 
     @Test
@@ -243,6 +282,20 @@ class RetryExtensionTest {
 
         assertSame(noMessageEx, thrown);
         verify(mockInvocation, times(1)).proceed();
+    }
+
+    @Test
+    void retryWithNonMatchingExceptionFailsFast() throws Throwable {
+        //noinspection unchecked
+        when(mockRetryTest.withExceptions()).thenReturn(new Class[]{IOException.class});
+        var runtimeEx = new RuntimeException("other");
+        doThrow(runtimeEx).when(mockInvocation).proceed();
+
+        var thrown = assertThrows(RuntimeException.class, () ->
+                retryExtension.interceptTestTemplateMethod(mockInvocation, mockInvocationContext, mockExtensionContext));
+
+        assertSame(runtimeEx, thrown);
+        verify(mockInvocation, times(1)).proceed(); // no retry
     }
 
     @Test

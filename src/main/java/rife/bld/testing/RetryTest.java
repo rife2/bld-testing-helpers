@@ -30,6 +30,10 @@ import java.lang.annotation.Target;
  * When a test fails, it will be retried up to the specified number of times.
  * Optionally, a wait period can be specified between retry attempts.
  * <p>
+ * By default, any exception triggers a retry. If {@code withExceptions} is specified,
+ * only matching exception types (or any exception in their cause chain) will trigger
+ * a retry — other failures fail fast without retrying.
+ * <p>
  * This annotation automatically includes the {@link RetryExtension}, so no additional
  * {@code @ExtendWith} annotation is required.
  *
@@ -44,6 +48,16 @@ import java.lang.annotation.Target;
  * &#64;RetryTest(value = 5, delay = 2)
  * void testWithDelay() {
  *     // Test that waits 2 seconds between retry attempts
+ * }
+ *
+ * &#64;RetryTest(value = 3, withExceptions = IOException.class)
+ * void testRetryOnIoException() {
+ *     // Only retries if IOException is thrown (or is a cause)
+ * }
+ *
+ * &#64;RetryTest(withExceptions = {SocketTimeoutException.class, ConnectException.class})
+ * void testRetryOnSpecificExceptions() {
+ *     // Only retries on specific network exceptions
  * }</pre></blockquote>
  *
  * @author <a href="https://erik.thauvin.net/">Erik C. Thauvin</a>
@@ -83,4 +97,12 @@ public @interface RetryTest {
      * @return the number of retry attempts. Must be greater than 0
      */
     int value() default 3;
+
+    /**
+     * Exception types that should trigger a retry.
+     * <p>
+     * If empty, any exception triggers a retry. If specified, only matching
+     * exceptions (or their causes) will be retried.
+     */
+    Class<? extends Throwable>[] withExceptions() default {};
 }
