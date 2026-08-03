@@ -109,10 +109,10 @@ class LoggingExtensionTest {
         }
 
         @Test
+        @SuppressWarnings("DataFlowIssue")
         void loggerAndNullHandlerConstructorUsesAllLevel() {
             var logger = getRandomLogger();
-            var extension = new LoggingExtension(logger, (Handler) null);
-            assertEquals(Level.ALL, getPrivateField(extension, "level"));
+            assertThrows(NullPointerException.class, () -> new LoggingExtension(logger, (Handler) null));
         }
 
         @Test
@@ -169,37 +169,6 @@ class LoggingExtensionTest {
             assertEquals(testLoggerName, logger.getName());
             assertSame(handler, getPrivateField(extension, "handler"));
             assertEquals(Level.OFF, getPrivateField(extension, "level"));
-        }
-    }
-
-    @Nested
-    @DisplayName("Coverage Edge Cases")
-    class CoverageEdgeCases {
-
-        @Test
-        void afterEachWithNullAddedHandlerAndNullOriginalHandlerLevel() throws ReflectiveOperationException {
-            var logger = getRandomLogger();
-            var extension = new LoggingExtension(logger);
-            var context = mockExtensionContext(this.getClass());
-
-            // Create LoggerState instance with null handler via reflection
-            var loggerStateClass = Class.forName("rife.bld.testing.LoggingExtension$LoggerState");
-            var ctor = loggerStateClass.getDeclaredConstructor(Logger.class, Handler.class);
-            ctor.setAccessible(true);
-            Object loggerState = ctor.newInstance(logger, null);
-
-            // Insert into TEST_METHOD_CONFIGS using the same key that afterEach will look up
-            var field = LoggingExtension.class.getDeclaredField("testMethodConfigs");
-            field.setAccessible(true);
-            @SuppressWarnings("unchecked")
-            var configs = (Map<Class<?>, Map<String, Object>>) field.get(null);
-
-            Map<String, Object> map = new ConcurrentHashMap<>();
-            map.put(context.getUniqueId(), loggerState);  // key must match getUniqueId()
-            configs.put(this.getClass(), map);
-
-            // Should not throw, covers (addedHandler == null) and (originalHandlerLevel == null)
-            assertDoesNotThrow(() -> extension.afterEach(context));
         }
     }
 

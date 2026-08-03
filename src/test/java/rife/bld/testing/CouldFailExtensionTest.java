@@ -28,6 +28,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @DisplayName("CouldFailExtension Unit Tests")
+@SuppressWarnings("EmptyMethod")
 class CouldFailExtensionTest {
 
     @CouldFail

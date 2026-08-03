@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     https://www.apache.org/licenses/LICENSE-2.0
+ * https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,7 +16,12 @@
 
 package rife.bld.testing;
 
+import org.jspecify.annotations.NullMarked;
+
+import java.io.PrintStream;
+import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -38,31 +43,35 @@ import java.util.regex.Pattern;
  * &#64;RegisterExtension
  * &#64;SuppressWarnings("unused")
  * private static final LoggingExtension loggingExtension = new LoggingExtension(
- *     logger,
- *     testLogHandler,
- *     Level.ALL
+ * logger,
+ * testLogHandler,
+ * Level.ALL
  * );
  *
  * // Manually, in a test method
  * &#64;Test
  * void testMethod() {
- *     var logger = Logger.getLogger(MyClass.class.getName());
- *     var logHandler = new TestLogHandler();
+ * var logger = Logger.getLogger(MyClass.class.getName());
+ * var logHandler = new TestLogHandler();
  *
- *     logger.addHandler(logHandler);
- *     logger.setLevel(Level.ALL);
+ * logger.addHandler(logHandler);
+ * logger.setLevel(Level.ALL);
  *
- *     // ...
+ * //...
  *
- *     logger.removeHandler(logHandler);
+ * logger.removeHandler(logHandler);
  * }</pre></blockquote>
  *
  * @author <a href="https://erik.thauvin.net/">Erik C. Thauvin</a>
  * @see LoggingExtension
  * @since 1.0
  */
+@NullMarked
 @SuppressWarnings("PMD.TestClassWithoutTestCases")
 public class TestLogHandler extends Handler {
+
+    private static final String MESSAGE_CANNOT_BE_NULL = "message" + TestingUtils.CANNOT_BE_NULL;
+    private static final String OUT_CANNOT_BE_NULL = "out" + TestingUtils.CANNOT_BE_NULL;
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final List<LogRecord> logRecords = new CopyOnWriteArrayList<>();
@@ -70,11 +79,13 @@ public class TestLogHandler extends Handler {
     /**
      * Publishes a log record if the handler is not closed.
      *
-     * @param record description of the log event. A null record is silently ignored and is not published
+     * @param record description of the log event, must not be null
+     * @throws NullPointerException if record is null
      */
     @Override
     public void publish(LogRecord record) {
-        if (record == null || closed.get() || !isLoggable(record)) {
+        Objects.requireNonNull(record, "record" + TestingUtils.CANNOT_BE_NULL);
+        if (closed.get() || !isLoggable(record)) {
             return;
         }
         logRecords.add(record);
@@ -104,6 +115,17 @@ public class TestLogHandler extends Handler {
     }
 
     /**
+     * Returns {@code record}'s message, or an empty string if the message is {@code null}.
+     * Used by every method that renders or exposes a record's message, so a {@code null}
+     * message is represented consistently (as an empty string, never the literal {@code "null"})
+     * across {@link #getLogMessages()} and all {@code printLogMessages*} variants.
+     */
+    private static String messageOrEmpty(LogRecord record) {
+        var message = record.getMessage();
+        return message != null ? message : "";
+    }
+
+    /**
      * Clears all captured log records and messages.
      * <p>
      * Thread-safe operation.
@@ -115,42 +137,55 @@ public class TestLogHandler extends Handler {
     /**
      * Checks if the log contains the exact message.
      *
-     * @param message the message to check for
+     * @param message the message to check for, must not be null
      * @return {@code true} if the log contains the message, {@code false} otherwise
+     * @throws NullPointerException if message is null
      */
     public boolean containsExactMessage(String message) {
-        return message != null && logRecords.stream().anyMatch(record -> message.equals(record.getMessage()));
+        Objects.requireNonNull(message, MESSAGE_CANNOT_BE_NULL);
+        return logRecords.stream().anyMatch(record -> message.equals(record.getMessage()));
     }
 
     /**
      * Checks if the log contains a message containing the given text.
+     * <p>
+     * Returns {@code false} for an empty {@code message}, consistent with
+     * {@link #countMessagesContaining(String)}, {@link #getFirstRecordContaining(String)}, and
+     * {@link #getLastRecordContaining(String)} — none of these substring-search methods treat an
+     * empty search string as matching every message.
      *
-     * @param message the text to check for
+     * @param message the text to check for, must not be null
      * @return {@code true} if the log contains a message with the text, {@code false} otherwise
+     * @throws NullPointerException if message is null
      */
     public boolean containsMessage(String message) {
-        return message != null && logRecords.stream().anyMatch(record ->
+        Objects.requireNonNull(message, MESSAGE_CANNOT_BE_NULL);
+        return !TestingUtils.isEmpty(message) && logRecords.stream().anyMatch(record ->
                 record.getMessage() != null && record.getMessage().contains(message));
     }
 
     /**
      * Checks if the log contains a message matching the given regex pattern.
      *
-     * @param pattern the regex pattern to match against
+     * @param pattern the regex pattern to match against, must not be null
      * @return {@code true} if any message matches the pattern, {@code false} otherwise
+     * @throws NullPointerException if pattern is null
      */
     public boolean containsMessageMatching(Pattern pattern) {
-        return pattern != null && logRecords.stream().anyMatch(record ->
+        Objects.requireNonNull(pattern, "pattern" + TestingUtils.CANNOT_BE_NULL);
+        return logRecords.stream().anyMatch(record ->
                 record.getMessage() != null && pattern.matcher(record.getMessage()).find());
     }
 
     /**
      * Counts the number of messages containing the given text.
      *
-     * @param message the text to check for
+     * @param message the text to check for, must not be null
      * @return the number of messages containing the given text
+     * @throws NullPointerException if message is null
      */
     public long countMessagesContaining(String message) {
+        Objects.requireNonNull(message, MESSAGE_CANNOT_BE_NULL);
         return TestingUtils.isEmpty(message) ? 0 :
                 logRecords.stream().filter(
                         record -> record.getMessage() != null
@@ -160,22 +195,25 @@ public class TestLogHandler extends Handler {
     /**
      * Counts the number of log records at the specified level.
      *
-     * @param level the log level to count
+     * @param level the log level to count, must not be null
      * @return the number of records at the specified level
+     * @throws NullPointerException if level is null
      */
     public long countRecordsAtLevel(Level level) {
-        return level == null ? 0 :
-                logRecords.stream().filter(record -> level.equals(record.getLevel())).count();
+        Objects.requireNonNull(level, "level" + TestingUtils.CANNOT_BE_NULL);
+        return logRecords.stream().filter(record -> level.equals(record.getLevel())).count();
     }
 
     /**
      * Gets the first log record containing the given text.
      *
-     * @param message the text to check for
+     * @param message the text to check for, must not be null
      * @return an {@link Optional} containing the first log record with the given text,
      * or {@link Optional#empty()} if not found or message is empty
+     * @throws NullPointerException if message is null
      */
     public Optional<LogRecord> getFirstRecordContaining(String message) {
+        Objects.requireNonNull(message, MESSAGE_CANNOT_BE_NULL);
         if (!TestingUtils.isEmpty(message)) {
             return logRecords.stream()
                     .filter(record -> record.getMessage() != null && record.getMessage().contains(message))
@@ -201,11 +239,13 @@ public class TestLogHandler extends Handler {
      * <p>
      * Uses a snapshot of the current records to avoid race conditions during concurrent access.
      *
-     * @param message the text to check for
+     * @param message the text to check for, must not be null
      * @return an {@link Optional} containing the last log record with the given text,
      * or {@link Optional#empty()} if not found or message is empty
+     * @throws NullPointerException if message is null
      */
     public Optional<LogRecord> getLastRecordContaining(String message) {
+        Objects.requireNonNull(message, MESSAGE_CANNOT_BE_NULL);
         if (TestingUtils.isEmpty(message)) {
             return Optional.empty();
         }
@@ -230,7 +270,7 @@ public class TestLogHandler extends Handler {
      */
     public List<String> getLogMessages() {
         return logRecords.stream()
-                .map(record -> record.getMessage() != null ? record.getMessage() : "")
+                .map(TestLogHandler::messageOrEmpty)
                 .toList();
     }
 
@@ -257,13 +297,12 @@ public class TestLogHandler extends Handler {
     /**
      * Gets all log records at or above the specified level.
      *
-     * @param level the minimum log level
+     * @param level the minimum log level, must not be null
      * @return immutable list of log records at or above the specified level
+     * @throws NullPointerException if level is null
      */
     public List<LogRecord> getRecordsAtOrAboveLevel(Level level) {
-        if (level == null) {
-            return List.of();
-        }
+        Objects.requireNonNull(level, "level" + TestingUtils.CANNOT_BE_NULL);
         return logRecords.stream()
                 .filter(record -> record.getLevel() != null
                         && record.getLevel().intValue() >= level.intValue())
@@ -273,11 +312,13 @@ public class TestLogHandler extends Handler {
     /**
      * Checks if the log contains a record with the given level.
      *
-     * @param level the level to check for
+     * @param level the level to check for, must not be null
      * @return {@code true} if the log contains a record with the given level, {@code false} otherwise
+     * @throws NullPointerException if level is null
      */
     public boolean hasLogLevel(Level level) {
-        return level != null && logRecords.stream().anyMatch(record -> level.equals(record.getLevel()));
+        Objects.requireNonNull(level, "level" + TestingUtils.CANNOT_BE_NULL);
+        return logRecords.stream().anyMatch(record -> level.equals(record.getLevel()));
     }
 
     /**
@@ -314,90 +355,103 @@ public class TestLogHandler extends Handler {
      * Each message is printed on a separate line in the order it was logged.
      * Records with a {@code null} message are printed as empty lines.
      *
-     * @param out the output stream to print to
+     * @param out the output stream to print to, must not be null
+     * @throws NullPointerException if out is null
      */
-    public void printLogMessages(java.io.PrintStream out) {
-        if (out != null) {
-            getLogMessages().forEach(out::println);
-        }
+    public void printLogMessages(PrintStream out) {
+        Objects.requireNonNull(out, OUT_CANNOT_BE_NULL);
+        getLogMessages().forEach(out::println);
     }
 
     /**
      * Prints all captured log messages with their log levels to standard output.
      * <p>
-     * Each message is printed in the format: [LEVEL] message
+     * Each message is printed in the format: [LEVEL] message. Records with a {@code null}
+     * message print as [LEVEL] followed by nothing, matching {@link #printLogMessages()}'s
+     * treatment of a {@code null} message as empty.
      */
     @SuppressWarnings("PMD.SystemPrintln")
     public void printLogMessagesWithLevel() {
         logRecords.forEach(record ->
-                System.out.println("[" + record.getLevel() + "] " + record.getMessage()));
+                System.out.println("[" + record.getLevel() + "] " + messageOrEmpty(record)));
     }
 
     /**
      * Prints all captured log messages with their log levels to the specified output stream.
      * <p>
-     * Each message is printed in the format: [LEVEL] message
+     * Each message is printed in the format: [LEVEL] message. Records with a {@code null}
+     * message print as [LEVEL] followed by nothing, matching {@link #printLogMessages()}'s
+     * treatment of a {@code null} message as empty.
      *
-     * @param out the output stream to print to
+     * @param out the output stream to print to, must not be null
+     * @throws NullPointerException if out is null
      */
-    public void printLogMessagesWithLevel(java.io.PrintStream out) {
-        if (out != null) {
-            logRecords.forEach(record ->
-                    out.println("[" + record.getLevel() + "] " + record.getMessage()));
-        }
+    public void printLogMessagesWithLevel(PrintStream out) {
+        Objects.requireNonNull(out, OUT_CANNOT_BE_NULL);
+        logRecords.forEach(record ->
+                out.println("[" + record.getLevel() + "] " + messageOrEmpty(record)));
     }
 
     /**
      * Prints all captured log messages with both level and timestamp to standard output.
      * <p>
-     * Each message is printed in the format: [timestamp] [LEVEL] message
+     * Each message is printed in the format: [timestamp] [LEVEL] message. Records with a
+     * {@code null} message print with nothing after the level, matching
+     * {@link #printLogMessages()}'s treatment of a {@code null} message as empty.
      */
     @SuppressWarnings("PMD.SystemPrintln")
     public void printLogMessagesWithLevelAndTimestamp() {
         logRecords.forEach(record ->
-                System.out.println("[" + java.time.Instant.ofEpochMilli(record.getMillis()) + "] [" +
-                        record.getLevel() + "] " + record.getMessage()));
+                System.out.println("[" + Instant.ofEpochMilli(record.getMillis()) + "] [" +
+                        record.getLevel() + "] " + messageOrEmpty(record)));
     }
 
     /**
      * Prints all captured log messages with both level and timestamp to the specified output stream.
      * <p>
-     * Each message is printed in the format: [timestamp] [LEVEL] message
+     * Each message is printed in the format: [timestamp] [LEVEL] message. Records with a
+     * {@code null} message print with nothing after the level, matching
+     * {@link #printLogMessages()}'s treatment of a {@code null} message as empty.
      *
-     * @param out the output stream to print to
+     * @param out the output stream to print to, must not be null
+     * @throws NullPointerException if out is null
      */
-    public void printLogMessagesWithLevelAndTimestamp(java.io.PrintStream out) {
-        if (out != null) {
-            logRecords.forEach(record ->
-                    out.println("[" + java.time.Instant.ofEpochMilli(record.getMillis()) + "] [" +
-                            record.getLevel() + "] " + record.getMessage()));
-        }
+    public void printLogMessagesWithLevelAndTimestamp(PrintStream out) {
+        Objects.requireNonNull(out, OUT_CANNOT_BE_NULL);
+        logRecords.forEach(record ->
+                out.println("[" + Instant.ofEpochMilli(record.getMillis()) + "] [" +
+                        record.getLevel() + "] " + messageOrEmpty(record)));
+
     }
 
     /**
      * Prints all captured log messages with timestamps to standard output.
      * <p>
-     * Each message is printed in the format: [timestamp] message
+     * Each message is printed in the format: [timestamp] message. Records with a {@code null}
+     * message print with nothing after the timestamp, matching {@link #printLogMessages()}'s
+     * treatment of a {@code null} message as empty.
      */
     @SuppressWarnings("PMD.SystemPrintln")
     public void printLogMessagesWithTimestamp() {
         logRecords.forEach(record ->
-                System.out.println("[" + java.time.Instant.ofEpochMilli(record.getMillis()) + "] " +
-                        record.getMessage()));
+                System.out.println("[" + Instant.ofEpochMilli(record.getMillis()) + "] " +
+                        messageOrEmpty(record)));
     }
 
     /**
      * Prints all captured log messages with timestamps to the specified output stream.
      * <p>
-     * Each message is printed in the format: [timestamp] message
+     * Each message is printed in the format: [timestamp] message. Records with a {@code null}
+     * message print with nothing after the timestamp, matching {@link #printLogMessages()}'s
+     * treatment of a {@code null} message as empty.
      *
-     * @param out the output stream to print to
+     * @param out the output stream to print to, must not be null
+     * @throws NullPointerException if out is null
      */
-    public void printLogMessagesWithTimestamp(java.io.PrintStream out) {
-        if (out != null) {
-            logRecords.forEach(record ->
-                    out.println("[" + java.time.Instant.ofEpochMilli(record.getMillis()) + "] " +
-                            record.getMessage()));
-        }
+    public void printLogMessagesWithTimestamp(PrintStream out) {
+        Objects.requireNonNull(out, OUT_CANNOT_BE_NULL);
+        logRecords.forEach(record ->
+                out.println("[" + Instant.ofEpochMilli(record.getMillis()) + "] " +
+                        messageOrEmpty(record)));
     }
 }

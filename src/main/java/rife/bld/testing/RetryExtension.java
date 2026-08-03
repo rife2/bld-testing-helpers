@@ -44,7 +44,8 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
     @SuppressWarnings({"PMD.DoNotUseThreads", "PMD.AvoidCatchingGenericException"})
     public void interceptTestTemplateMethod(Invocation<Void> invocation,
                                             ReflectiveInvocationContext<Method> invocationContext,
-                                            ExtensionContext extensionContext) throws Throwable {
+                                            ExtensionContext extensionContext)
+            throws Throwable {
         var methodOpt = extensionContext.getTestMethod();
         if (methodOpt.isEmpty()) {
             invocation.proceed();

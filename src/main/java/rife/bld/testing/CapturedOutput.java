@@ -16,13 +16,14 @@
 
 package rife.bld.testing;
 
+import org.jspecify.annotations.NullMarked;
+
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * Container for captured stdout and stderr output during test execution.
@@ -84,6 +85,7 @@ import java.util.stream.Collectors;
  * @see CaptureOutputExtension
  * @since 1.0
  */
+@NullMarked
 public class CapturedOutput {
 
     /**
@@ -178,9 +180,9 @@ public class CapturedOutput {
     /**
      * Combines and retrieves both stdout and stderr content as a single string.
      * <p>
-     * This method concatenates the stdout content followed by the stderr content.
-     * The order reflects the sequence in which output was written during test execution,
-     * with stdout content appearing first, followed by stderr content.
+     * This method concatenates the stdout content followed by the stderr content
+     * exactly as captured, without inserting any synthetic separators. The content
+     * is preserved verbatim.
      * <p>
      * <strong>Note:</strong> This does not preserve the exact interleaving of stdout and stderr
      * as it would appear in a real console, but rather groups all stdout first,
@@ -225,15 +227,20 @@ public class CapturedOutput {
      * This method combines all captured output (both stdout and stderr) in the
      * exact order it was written during test execution. This preserves the
      * interleaving of stdout and stderr as it would appear in a real console.
+     * The content of each entry is concatenated verbatim without inserting any
+     * synthetic line separators, so {@code print()} calls without newlines are
+     * preserved exactly as written.
      *
      * @return the chronologically ordered output content, or empty string if no output was captured
      * @see #getChronologicalEntries()
      * @see #getAll()
      */
     public String getChronologicalContent() {
-        return chronologicalEntries.stream()
-                .map(OutputEntry::content)
-                .collect(Collectors.joining());
+        var builder = new StringBuilder();
+        for (var entry : chronologicalEntries) {
+            builder.append(entry.content());
+        }
+        return builder.toString();
     }
 
     /**
@@ -326,7 +333,7 @@ public class CapturedOutput {
      * Retrieves the captured stdout content as a string.
      * <p>
      * This method converts all data written to {@code System.out} during the test
-     * execution into a string decoded as UTF-8.. Line separators are preserved as
+     * execution into a string decoded as UTF-8. Line separators are preserved as
      * they were originally written.
      *
      * @return the complete stdout content as a string, or empty string if no stdout was captured
@@ -418,7 +425,6 @@ public class CapturedOutput {
     void addEntry(OutputType type, String content) {
         chronologicalEntries.add(new OutputEntry(type, content, Instant.now()));
     }
-
 
     /**
      * Enumeration of output types for distinguishing between stdout and stderr.

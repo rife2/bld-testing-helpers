@@ -215,10 +215,24 @@ class TestLogHandlerTest {
             assertEquals(Optional.empty(), handler.getLastRecordContaining(""));
         }
 
+        @Test
+        @DisplayName("Should return null for last record on empty handler")
+        void shouldReturnNullForLastRecordOnEmptyHandler() {
+            assertEquals(Optional.empty(), handler.getLastRecord());
+        }
+
+        @Test
+        @DisplayName("Should return null when no record contains text")
+        void shouldReturnNullWhenNoRecordContainsText() {
+            var someRecord = new LogRecord(Level.INFO, "Some message");
+            handler.publish(someRecord);
+            assertEquals(Optional.empty(), handler.getLastRecordContaining("nonexistent"));
+        }
+
         @ParameterizedTest(name = "Should get last record containing ''{0}''")
         @NullAndEmptySource
-        @DisplayName("Should handle null or empty messages")
-        void shouldHandleNullOrEmptyMessage(String message) {
+        @DisplayName("Should throw with null or empty messages")
+        void shouldThrowWithNullOrEmptyMessage(String message) {
             var fooRecord = new LogRecord(Level.INFO, "foo");
             var nullRecord = new LogRecord(Level.INFO, message);
             var barRecord = new LogRecord(Level.FINE, "bar");
@@ -235,25 +249,12 @@ class TestLogHandlerTest {
         }
 
         @Test
-        @DisplayName("Should handle null search in getLastRecordContaining")
-        void shouldHandleNullSearchInGetLastRecordContaining() {
+        @DisplayName("Should throw with null search in getLastRecordContaining")
+        @SuppressWarnings("DataFlowIssue")
+        void shouldThrowWithNullSearchInGetLastRecordContaining() {
             var testRecord = new LogRecord(Level.INFO, "Test message");
             handler.publish(testRecord);
-            assertEquals(Optional.empty(), handler.getLastRecordContaining(null));
-        }
-
-        @Test
-        @DisplayName("Should return null for last record on empty handler")
-        void shouldReturnNullForLastRecordOnEmptyHandler() {
-            assertEquals(Optional.empty(), handler.getLastRecord());
-        }
-
-        @Test
-        @DisplayName("Should return null when no record contains text")
-        void shouldReturnNullWhenNoRecordContainsText() {
-            var someRecord = new LogRecord(Level.INFO, "Some message");
-            handler.publish(someRecord);
-            assertEquals(Optional.empty(), handler.getLastRecordContaining("nonexistent"));
+            assertThrows(NullPointerException.class, () -> handler.getLastRecordContaining(null));
         }
     }
 
@@ -551,25 +552,26 @@ class TestLogHandlerTest {
         }
 
         @Test
-        @DisplayName("Should handle null level in countRecordsAtLevel")
-        void shouldHandleNullLevelInCountRecordsAtLevel() {
-            assertEquals(0, handler.countRecordsAtLevel(null));
-        }
-
-        @Test
-        @DisplayName("Should handle null level in getRecordsAtOrAboveLevel")
-        void shouldHandleNullLevelInGetRecordsAtOrAboveLevel() {
-            var records = handler.getRecordsAtOrAboveLevel(null);
-            assertTrue(records.isEmpty());
-        }
-
-        @Test
         @DisplayName("Should return immutable list from getRecordsAtOrAboveLevel")
         void shouldReturnImmutableListFromGetRecordsAtOrAboveLevel() {
             var records = handler.getRecordsAtOrAboveLevel(Level.INFO);
             var shouldNotBeAddedRecord = new LogRecord(Level.INFO, "Should not be added");
 
             assertThrows(UnsupportedOperationException.class, () -> records.add(shouldNotBeAddedRecord));
+        }
+
+        @Test
+        @DisplayName("Should throw with null level in countRecordsAtLevel")
+        @SuppressWarnings("DataFlowIssue")
+        void shouldThrowWithNullLevelInCountRecordsAtLevel() {
+            assertThrows(NullPointerException.class, () -> handler.countRecordsAtLevel(null));
+        }
+
+        @Test
+        @DisplayName("Should throw with null level in getRecordsAtOrAboveLevel")
+        @SuppressWarnings("DataFlowIssue")
+        void shouldThrowWithNullLevelInGetRecordsAtOrAboveLevel() {
+            assertThrows(NullPointerException.class, () -> handler.getRecordsAtOrAboveLevel(null));
         }
     }
 
@@ -756,20 +758,6 @@ class TestLogHandlerTest {
         }
 
         @Test
-        @DisplayName("Should handle exact message search with null messages present")
-        void shouldHandleExactMessageSearchWithNullMessagesPresent() {
-            var exactMessageRecord = new LogRecord(Level.WARNING, "Exact message");
-
-            handler.publish(NULL_INFO_RECORD);
-            handler.publish(exactMessageRecord);
-            handler.publish(NULL_SEVERE_RECORD);
-
-            assertTrue(handler.containsExactMessage("Exact message"));
-            assertFalse(handler.containsExactMessage("Exact"));
-            assertFalse(handler.containsExactMessage(null));
-        }
-
-        @Test
         @DisplayName("Should handle getFirstRecordContaining with null messages present")
         void shouldHandleGetFirstRecordContainingWithNullMessagesPresent() {
             var validRecord = new LogRecord(Level.WARNING, "Find me");
@@ -824,77 +812,75 @@ class TestLogHandlerTest {
         }
 
         @Test
-        @DisplayName("Should handle null log level in hasLogLevel")
-        void shouldHandleNullLogLevelInHasLogLevel() {
+        @DisplayName("Should throw with null log level in hasLogLevel")
+        @SuppressWarnings("DataFlowIssue")
+        void shouldThrowWithNullLogLevelInHasLogLevel() {
             var testRecord = new LogRecord(Level.INFO, "Test message");
             handler.publish(testRecord);
 
-            assertDoesNotThrow(() -> {
-                boolean result = handler.hasLogLevel(null);
-                assertFalse(result);
-            });
+            assertThrows(NullPointerException.class, () -> handler.hasLogLevel(null));
         }
 
         @Test
-        @DisplayName("Should handle null LogRecord")
-        void shouldHandleNullLogRecord() {
-            // This should either throw an exception or handle gracefully
-            // The behavior depends on the implementation requirements
-            assertDoesNotThrow(() -> handler.publish(null));
+        @DisplayName("Should throw with null LogRecord")
+        @SuppressWarnings("DataFlowIssue")
+        void shouldThrowWithNullLogRecord() {
+            assertThrows(NullPointerException.class, () -> handler.publish(null));
         }
 
         @ParameterizedTest
         @NullSource
-        @DisplayName("Should handle null search terms in containsExactMessage")
-        void shouldHandleNullSearchTermsInContainsExactMessage(String nullSearchTerm) {
+        @DisplayName("Should throw with null search terms in containsExactMessage")
+        void shouldThrowWithNullSearchTermsInContainsExactMessage(String nullSearchTerm) {
             var testRecord = new LogRecord(Level.INFO, "Test message");
             handler.publish(testRecord);
 
-            assertDoesNotThrow(() -> {
-                boolean result = handler.containsExactMessage(nullSearchTerm);
-                assertFalse(result);
-            });
+            assertThrows(NullPointerException.class, () -> handler.containsExactMessage(nullSearchTerm));
         }
 
         @ParameterizedTest
         @NullSource
-        @DisplayName("Should handle null search terms in containsMessage")
-        void shouldHandleNullSearchTermsInContainsMessage(String nullSearchTerm) {
+        @DisplayName("Should throw with null search terms in containsMessage")
+        void shouldThrowWithNullSearchTermsInContainsMessage(String nullSearchTerm) {
             var testRecord = new LogRecord(Level.INFO, "Test message");
             handler.publish(testRecord);
 
-            // Should handle null gracefully - either return false or throw the appropriate exception
-            assertDoesNotThrow(() -> {
-                boolean result = handler.containsMessage(nullSearchTerm);
-                // Most implementations would return false for null search terms
-                assertFalse(result);
-            });
+            assertThrows(NullPointerException.class, () -> handler.containsMessage(nullSearchTerm));
         }
 
         @ParameterizedTest
         @NullSource
-        @DisplayName("Should handle null search terms in countMessagesContaining")
-        void shouldHandleNullSearchTermsInCountMessagesContaining(String nullSearchTerm) {
+        @DisplayName("Should throw with null search terms in countMessagesContaining")
+        void shouldThrowWithNullSearchTermsInCountMessagesContaining(String nullSearchTerm) {
             var testRecord = new LogRecord(Level.INFO, "Test message");
             handler.publish(testRecord);
 
-            assertDoesNotThrow(() -> {
-                long count = handler.countMessagesContaining(nullSearchTerm);
-                assertEquals(0, count);
-            });
+            assertThrows(NullPointerException.class, () -> handler.countMessagesContaining(nullSearchTerm));
         }
 
         @ParameterizedTest
         @NullSource
-        @DisplayName("Should handle null search terms in getFirstRecordContaining")
-        void shouldHandleNullSearchTermsInGetFirstRecordContaining(String nullSearchTerm) {
+        @DisplayName("Should throw with null search terms in getFirstRecordContaining")
+        void shouldThrowWithNullSearchTermsInGetFirstRecordContaining(String nullSearchTerm) {
             var testRecord = new LogRecord(Level.INFO, "Test message");
             handler.publish(testRecord);
 
-            assertDoesNotThrow(() -> {
-                var result = handler.getFirstRecordContaining(nullSearchTerm);
-                assertEquals(Optional.empty(), result);
-            });
+            assertThrows(NullPointerException.class, () -> handler.getFirstRecordContaining(nullSearchTerm));
+        }
+
+        @Test
+        @DisplayName("Should throw on exact message search with null messages present")
+        @SuppressWarnings("DataFlowIssue")
+        void shouldThrowsOnExactMessageSearchWithNullMessagesPresent() {
+            var exactMessageRecord = new LogRecord(Level.WARNING, "Exact message");
+
+            handler.publish(NULL_INFO_RECORD);
+            handler.publish(exactMessageRecord);
+            handler.publish(NULL_SEVERE_RECORD);
+
+            assertTrue(handler.containsExactMessage("Exact message"));
+            assertFalse(handler.containsExactMessage("Exact"));
+            assertThrows(NullPointerException.class, () -> handler.containsExactMessage(null));
         }
     }
 
@@ -929,14 +915,6 @@ class TestLogHandlerTest {
         }
 
         @Test
-        @DisplayName("Should handle null pattern")
-        void shouldHandleNullPattern() {
-            var testRecord = new LogRecord(Level.INFO, "Test message");
-            handler.publish(testRecord);
-            assertFalse(handler.containsMessageMatching(null));
-        }
-
-        @Test
         @DisplayName("Should handle pattern with null messages")
         void shouldHandlePatternWithNullMessages() {
             var validRecord = new LogRecord(Level.WARNING, "Valid message");
@@ -962,6 +940,15 @@ class TestLogHandlerTest {
             assertTrue(handler.containsMessageMatching(errorPattern));
             assertTrue(handler.containsMessageMatching(warningPattern));
             assertFalse(handler.containsMessageMatching(numberPattern));
+        }
+
+        @Test
+        @DisplayName("Should throw with null pattern")
+        @SuppressWarnings("DataFlowIssue")
+        void shouldThrowWithNullPattern() {
+            var testRecord = new LogRecord(Level.INFO, "Test message");
+            handler.publish(testRecord);
+            assertThrows(NullPointerException.class, () -> handler.containsMessageMatching(null));
         }
     }
 
@@ -1078,23 +1065,8 @@ class TestLogHandlerTest {
         private ByteArrayOutputStream outputStream;
         private PrintStream printStream;
 
-        @BeforeEach
-        void setUp() {
-            handler = new TestLogHandler();
-            outputStream = new ByteArrayOutputStream();
-            printStream = new PrintStream(outputStream);
-            originalOut = System.out;
-        }
-
-        @AfterEach
-        void tearDown() {
-            handler.close();
-            printStream.close();
-            System.setOut(originalOut);
-        }
-
         @Test
-        void testPrintEmptyLogMessages() {
+        void printEmptyLogMessages() {
             System.setOut(printStream);
 
             handler.printLogMessages();
@@ -1103,7 +1075,7 @@ class TestLogHandlerTest {
         }
 
         @Test
-        void testPrintLogMessages() {
+        void printLogMessages() {
             var record1 = new LogRecord(Level.INFO, "First message");
             var record2 = new LogRecord(Level.WARNING, "Second message");
             handler.publish(record1);
@@ -1121,7 +1093,7 @@ class TestLogHandlerTest {
         }
 
         @Test
-        void testPrintLogMessagesWithCustomStream() {
+        void printLogMessagesWithCustomStream() {
             var record1 = new LogRecord(Level.INFO, "Test message 1");
             var record2 = new LogRecord(Level.SEVERE, "Test message 2");
             handler.publish(record1);
@@ -1135,7 +1107,7 @@ class TestLogHandlerTest {
         }
 
         @Test
-        void testPrintLogMessagesWithLevel() {
+        void printLogMessagesWithLevel() {
             var record1 = new LogRecord(Level.INFO, "Info message");
             var record2 = new LogRecord(Level.WARNING, "Warning message");
             handler.publish(record1);
@@ -1151,7 +1123,7 @@ class TestLogHandlerTest {
         }
 
         @Test
-        void testPrintLogMessagesWithLevelAndTimestamp() {
+        void printLogMessagesWithLevelAndTimestamp() {
             var record = new LogRecord(Level.WARNING, "Full format message");
             handler.publish(record);
 
@@ -1168,7 +1140,7 @@ class TestLogHandlerTest {
         }
 
         @Test
-        void testPrintLogMessagesWithLevelAndTimestampCustomStream() {
+        void printLogMessagesWithLevelAndTimestampCustomStream() {
             var record = new LogRecord(Level.SEVERE, "Complete log entry");
             handler.publish(record);
 
@@ -1183,15 +1155,16 @@ class TestLogHandlerTest {
         }
 
         @Test
-        void testPrintLogMessagesWithLevelAndTimestampNullStream() {
+        @SuppressWarnings("DataFlowIssue")
+        void printLogMessagesWithLevelAndTimestampNullStream() {
             var record = new LogRecord(Level.INFO, "Test");
             handler.publish(record);
 
-            assertDoesNotThrow(() -> handler.printLogMessagesWithLevelAndTimestamp(null));
+            assertThrows(NullPointerException.class, () -> handler.printLogMessagesWithLevelAndTimestamp(null));
         }
 
         @Test
-        void testPrintLogMessagesWithLevelCustomStream() {
+        void printLogMessagesWithLevelCustomStream() {
             var record = new LogRecord(Level.SEVERE, "Error occurred");
             handler.publish(record);
 
@@ -1202,23 +1175,25 @@ class TestLogHandlerTest {
         }
 
         @Test
-        void testPrintLogMessagesWithLevelNullStream() {
+        @SuppressWarnings("DataFlowIssue")
+        void printLogMessagesWithLevelNullStream() {
             var record = new LogRecord(Level.INFO, "Test");
             handler.publish(record);
 
-            assertDoesNotThrow(() -> handler.printLogMessagesWithLevel(null));
+            assertThrows(NullPointerException.class, () -> handler.printLogMessagesWithLevel(null));
         }
 
         @Test
-        void testPrintLogMessagesWithNullStream() {
+        @SuppressWarnings("DataFlowIssue")
+        void printLogMessagesWithNullStream() {
             var record = new LogRecord(Level.INFO, "Test message");
             handler.publish(record);
 
-            assertDoesNotThrow(() -> handler.printLogMessages(null));
+            assertThrows(NullPointerException.class, () -> handler.printLogMessages(null));
         }
 
         @Test
-        void testPrintLogMessagesWithTimestamp() {
+        void printLogMessagesWithTimestamp() {
             var record = new LogRecord(Level.INFO, "Timestamped message");
             handler.publish(record);
 
@@ -1236,7 +1211,7 @@ class TestLogHandlerTest {
         }
 
         @Test
-        void testPrintLogMessagesWithTimestampCustomStream() {
+        void printLogMessagesWithTimestampCustomStream() {
             var record = new LogRecord(Level.INFO, "Time test");
             handler.publish(record);
 
@@ -1250,15 +1225,16 @@ class TestLogHandlerTest {
         }
 
         @Test
-        void testPrintLogMessagesWithTimestampNullStream() {
+        @SuppressWarnings("DataFlowIssue")
+        void printLogMessagesWithTimestampNullStream() {
             var record = new LogRecord(Level.INFO, "Test");
             handler.publish(record);
 
-            assertDoesNotThrow(() -> handler.printLogMessagesWithTimestamp(null));
+            assertThrows(NullPointerException.class, () -> handler.printLogMessagesWithTimestamp(null));
         }
 
         @Test
-        void testPrintMessagesAfterClear() {
+        void printMessagesAfterClear() {
             handler.publish(new LogRecord(Level.INFO, "Before clear"));
             handler.clear();
             handler.publish(new LogRecord(Level.INFO, "After clear"));
@@ -1271,7 +1247,7 @@ class TestLogHandlerTest {
         }
 
         @Test
-        void testPrintMessagesPreservesOrder() {
+        void printMessagesPreservesOrder() {
             handler.publish(new LogRecord(Level.INFO, "First"));
             handler.publish(new LogRecord(Level.INFO, "Second"));
             handler.publish(new LogRecord(Level.INFO, "Third"));
@@ -1288,7 +1264,7 @@ class TestLogHandlerTest {
         }
 
         @Test
-        void testPrintMessagesWithDifferentLevels() {
+        void printMessagesWithDifferentLevels() {
             handler.publish(new LogRecord(Level.FINEST, "Trace"));
             handler.publish(new LogRecord(Level.INFO, "Info"));
             handler.publish(new LogRecord(Level.SEVERE, "Error"));
@@ -1303,7 +1279,7 @@ class TestLogHandlerTest {
 
         @Test
         @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
-        void testPrintMultipleMessages() {
+        void printMultipleMessages() {
             for (int i = 1; i <= 5; i++) {
                 var record = new LogRecord(Level.INFO, "Message " + i);
                 handler.publish(record);
@@ -1317,6 +1293,21 @@ class TestLogHandlerTest {
             for (int i = 1; i <= 5; i++) {
                 assertTrue(output.contains("Message " + i));
             }
+        }
+
+        @BeforeEach
+        void setUp() {
+            handler = new TestLogHandler();
+            outputStream = new ByteArrayOutputStream();
+            printStream = new PrintStream(outputStream);
+            originalOut = System.out;
+        }
+
+        @AfterEach
+        void tearDown() {
+            handler.close();
+            printStream.close();
+            System.setOut(originalOut);
         }
     }
 
@@ -1353,29 +1344,15 @@ class TestLogHandlerTest {
         }
 
         @ParameterizedTest
-        @NullAndEmptySource
-        @DisplayName("Should handle null and empty search terms in record retrieval")
-        void shouldHandleNullAndEmptySearchTermsInRecordRetrieval(String searchTerm) {
+        @EmptySource
+        @DisplayName("Should handle empty search terms in record retrieval")
+        void shouldHandleSearchTermsInRecordRetrieval(String searchTerm) {
             var testRecord = new LogRecord(Level.INFO, "Test message");
             handler.publish(testRecord);
 
             var result = handler.getFirstRecordContaining(searchTerm);
 
             assertFalse(result.isPresent());
-        }
-
-        @Test
-        @DisplayName("Should handle null messages in getFirstRecordContaining")
-        void shouldHandleNullMessagesInGetFirstRecordContaining() {
-            var validRecord = new LogRecord(Level.WARNING, "Valid message");
-
-            handler.publish(NULL_INFO_RECORD);
-            handler.publish(validRecord);
-
-            var result = handler.getFirstRecordContaining("Valid");
-
-            assertTrue(result.isPresent());
-            assertEquals(validRecord.getMessage(), result.get().getMessage());
         }
 
         @Test
@@ -1403,6 +1380,7 @@ class TestLogHandlerTest {
 
         @Test
         @DisplayName("Should return null in getLastRecordContaining when record.getMessage() is null")
+        @SuppressWarnings("DataFlowIssue")
         void shouldReturnNullInGetLastRecordContainingWhenRecordMessageIsNull() {
             var nullMessageRecord = new LogRecord(Level.INFO, null);
             var anotherNullMessageRecord = new LogRecord(Level.WARNING, null);
@@ -1413,11 +1391,11 @@ class TestLogHandlerTest {
             // No non-null message should always return null for any search
             assertEquals(Optional.empty(), handler.getLastRecordContaining("anything"));
             assertEquals(Optional.empty(), handler.getLastRecordContaining(""));
-            assertEquals(Optional.empty(), handler.getLastRecordContaining(null));
+            assertThrows(NullPointerException.class, () -> handler.getLastRecordContaining(null));
         }
 
         @ParameterizedTest
-        @ValueSource(strings = {"nonexistent", "missing", "notfound"})
+        @ValueSource(strings = {"nonexistent", "missing", "not found"})
         @DisplayName("Should return null when no record contains text")
         void shouldReturnNullWhenNoRecordContainsText(String searchText) {
             var someRecord = new LogRecord(Level.INFO, "Some message");
@@ -1426,6 +1404,30 @@ class TestLogHandlerTest {
             var result = handler.getFirstRecordContaining(searchText);
 
             assertEquals(Optional.empty(), result);
+        }
+
+        @ParameterizedTest
+        @NullSource
+        @DisplayName("Should throw with null search terms in record retrieval")
+        void shouldThrowWithNullAndEmptySearchTermsInRecordRetrieval(String searchTerm) {
+            var testRecord = new LogRecord(Level.INFO, "Test message");
+            handler.publish(testRecord);
+
+            assertThrows(NullPointerException.class, () -> handler.getFirstRecordContaining(searchTerm));
+        }
+
+        @Test
+        @DisplayName("Should throw with null messages in getFirstRecordContaining")
+        void shouldThrowWithNullMessagesInGetFirstRecordContaining() {
+            var validRecord = new LogRecord(Level.WARNING, "Valid message");
+
+            handler.publish(NULL_INFO_RECORD);
+            handler.publish(validRecord);
+
+            var result = handler.getFirstRecordContaining("Valid");
+
+            assertTrue(result.isPresent());
+            assertEquals(validRecord.getMessage(), result.get().getMessage());
         }
     }
 

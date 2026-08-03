@@ -16,13 +16,15 @@
 
 package rife.bld.testing;
 
-import edu.umd.cs.findbugs.annotations.NonNull;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.extension.*;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.Objects;
 
 /**
  * JUnit extension that captures stdout and stderr during test execution.
@@ -54,11 +56,11 @@ import java.util.Locale;
  */
 public class CaptureOutputExtension implements BeforeEachCallback, AfterEachCallback, ParameterResolver {
 
+    static final String NULL = "null";
     /**
      * The key used to store captured output in the extension context.
      */
     private static final String CAPTURED_OUTPUT_KEY = "capturedOutput";
-
     /**
      * The ByteArrayOutputStream for capturing stderr.
      */
@@ -182,6 +184,7 @@ public class CaptureOutputExtension implements BeforeEachCallback, AfterEachCall
      * simultaneously recording entries with timestamps and output types for
      * chronological tracking.
      */
+    @NullMarked
     private static class ChronologicalPrintStream extends PrintStream {
 
         /**
@@ -195,17 +198,43 @@ public class CaptureOutputExtension implements BeforeEachCallback, AfterEachCall
 
         /**
          * Creates a new ChronologicalPrintStream.
+         * <p>
+         * Explicitly encodes with {@link StandardCharsets#UTF_8} rather than the platform
+         * default charset, matching the {@code UTF_8} decoding {@link CapturedOutput#getOut()}
+         * and {@link CapturedOutput#getErr()} always use — using the platform default here
+         * would silently corrupt any non-ASCII output on a platform whose default charset
+         * isn't UTF-8.
          *
          * @param out            the underlying output stream
          * @param outputType     the type of output (STDOUT or STDERR)
          * @param capturedOutput the CapturedOutput instance to record entries
          */
-        @SuppressFBWarnings("DM_DEFAULT_ENCODING")
         ChronologicalPrintStream(ByteArrayOutputStream out, CapturedOutput.OutputType outputType,
                                  CapturedOutput capturedOutput) {
-            super(out);
+            super(out, false, StandardCharsets.UTF_8);
             this.outputType = outputType;
             this.capturedOutput = capturedOutput;
+        }
+
+        /**
+         * Writes a single byte and records it chronologically.
+         * <p>
+         * The byte is written to the underlying capture stream as per
+         * {@link PrintStream#write(int)}. For the chronological entry, the byte is widened
+         * directly to a {@code char} (not charset-decoded) — this is only correct for
+         * single-byte (ASCII-range) values. A byte that is part of a multi-byte UTF-8
+         * sequence will produce an incorrect chronological entry, since a single byte
+         * cannot be decoded on its own. This does not affect {@link CapturedOutput#getOut()}
+         * or {@link CapturedOutput#getErr()}, which decode the raw captured bytes as a
+         * whole. If the stream has an error, the write is still recorded to preserve the
+         * exact chronological order of operations.
+         *
+         * @param b the byte to write (lowest 8 bits)
+         */
+        @Override
+        public void write(int b) {
+            super.write(b);
+            capturedOutput.addEntry(outputType, String.valueOf((char) (b & 0xFF)));
         }
 
         /**
@@ -284,9 +313,12 @@ public class CaptureOutputExtension implements BeforeEachCallback, AfterEachCall
          * Prints a character array and records it chronologically.
          *
          * @param s the character array to print
+         * @throws NullPointerException if {@code s} is {@code null}, matching
+         *                              {@link PrintStream#print(char[])}
          */
         @Override
-        public void print(@NonNull char[] s) {
+        public void print(char[] s) {
+            Objects.requireNonNull(s, "s");
             var content = String.valueOf(s);
             super.print(content);
             capturedOutput.addEntry(outputType, content);
@@ -298,11 +330,9 @@ public class CaptureOutputExtension implements BeforeEachCallback, AfterEachCall
          * @param s the string to print
          */
         @Override
-        public void print(String s) {
+        public void print(@Nullable String s) {
             super.print(s);
-            if (s != null) {
-                capturedOutput.addEntry(outputType, s);
-            }
+            capturedOutput.addEntry(outputType, s != null ? s : NULL);
         }
 
         /**
@@ -311,7 +341,7 @@ public class CaptureOutputExtension implements BeforeEachCallback, AfterEachCall
          * @param obj the object to print
          */
         @Override
-        public void print(Object obj) {
+        public void print(@Nullable Object obj) {
             var content = String.valueOf(obj);
             super.print(content);
             capturedOutput.addEntry(outputType, content);
@@ -403,9 +433,12 @@ public class CaptureOutputExtension implements BeforeEachCallback, AfterEachCall
          * Prints a character array followed by a line separator and records it chronologically.
          *
          * @param s the character array to print
+         * @throws NullPointerException if {@code s} is {@code null}, matching
+         *                              {@link PrintStream#println(char[])}
          */
         @Override
-        public void println(@NonNull char[] s) {
+        public void println(char[] s) {
+            Objects.requireNonNull(s, "s");
             var content = String.valueOf(s) + System.lineSeparator();
             super.print(content);
             capturedOutput.addEntry(outputType, content);
@@ -417,8 +450,8 @@ public class CaptureOutputExtension implements BeforeEachCallback, AfterEachCall
          * @param s the string to print
          */
         @Override
-        public void println(String s) {
-            var content = s + System.lineSeparator();
+        public void println(@Nullable String s) {
+            var content = (s != null ? s : NULL) + System.lineSeparator();
             super.print(content);
             capturedOutput.addEntry(outputType, content);
         }
@@ -429,8 +462,8 @@ public class CaptureOutputExtension implements BeforeEachCallback, AfterEachCall
          * @param obj the object to print
          */
         @Override
-        public void println(Object obj) {
-            var content = obj + System.lineSeparator();
+        public void println(@Nullable Object obj) {
+            var content = (obj != null ? obj : NULL) + System.lineSeparator();
             super.print(content);
             capturedOutput.addEntry(outputType, content);
         }
@@ -443,7 +476,7 @@ public class CaptureOutputExtension implements BeforeEachCallback, AfterEachCall
          * @return this PrintStream
          */
         @Override
-        public PrintStream printf(@NonNull String format, Object... args) {
+        public PrintStream printf(String format, Object... args) {
             var content = String.format(format, args);
             super.print(content);
             capturedOutput.addEntry(outputType, content);
@@ -459,7 +492,7 @@ public class CaptureOutputExtension implements BeforeEachCallback, AfterEachCall
          * @return this PrintStream
          */
         @Override
-        public PrintStream printf(Locale locale, @NonNull String format, Object... args) {
+        public PrintStream printf(Locale locale, String format, Object... args) {
             var content = String.format(locale, format, args);
             super.print(content);
             capturedOutput.addEntry(outputType, content);
@@ -473,7 +506,7 @@ public class CaptureOutputExtension implements BeforeEachCallback, AfterEachCall
          * @return this PrintStream
          */
         @Override
-        public PrintStream append(CharSequence csq) {
+        public PrintStream append(@Nullable CharSequence csq) {
             var content = String.valueOf(csq);
             super.print(content);
             capturedOutput.addEntry(outputType, content);
@@ -489,8 +522,9 @@ public class CaptureOutputExtension implements BeforeEachCallback, AfterEachCall
          * @return this PrintStream
          */
         @Override
-        public PrintStream append(CharSequence csq, int start, int end) {
-            var content = csq == null ? "null" : String.valueOf(csq.subSequence(start, end));
+        public PrintStream append(@Nullable CharSequence csq, int start, int end) {
+            var seq = csq == null ? NULL : csq;
+            var content = seq.subSequence(start, end).toString();
             super.print(content);
             capturedOutput.addEntry(outputType, content);
             return this;

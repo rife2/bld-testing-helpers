@@ -57,10 +57,11 @@ public class TestingHelpersBuild extends Project {
                 .include(dependency("com.github.spotbugs", "spotbugs-annotations",
                         version(4, 10, 3)));
         scope(test)
+                .include(dependency("org.jspecify", "jspecify", "1.0.1"))
                 .include(junitJupiter)
                 .include(junitPlatform)
                 .include(dependency("io.github.classgraph", "classgraph",
-                        version(4, 8, 184)))
+                        version(4, 8, 186)))
                 .include(dependency("org.mockito", "mockito-junit-jupiter",
                         version(5, 23, 0)));
 
@@ -69,7 +70,7 @@ public class TestingHelpersBuild extends Project {
                 .author()
                 .docLint(NO_MISSING)
                 .link("https://docs.junit.org/current/api/")
-                .link("https://findbugs.sourceforge.net/api/");
+                .link("https://jspecify.dev/docs/api/");
 
         publishOperation()
                 .repository(version.isSnapshot() ?

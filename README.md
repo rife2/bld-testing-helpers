@@ -10,7 +10,7 @@
 To use the testing helpers, include the following in your `bld` build file:
 
 ```java
-repositories = List.of(RIFE2_SNAPSHOTS, RIFE2_RELEASES, RIFE2_SNAPSHOTS);
+repositories = List.of(RIFE2_RELEASES, RIFE2_SNAPSHOTS);
 
 scope(test).include(
     dependency("com.uwyn.rife2", "bld-testing-helpers", version(1, 1, 0, "SNAPSHOT"))

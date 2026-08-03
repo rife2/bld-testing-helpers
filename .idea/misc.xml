@@ -5,6 +5,15 @@
       <entry_point TYPE="field" FQNAME="rife.bld.extension.testing.RandomStringResolverTests.FieldInjection$4TestClass fieldAnnotated" />
       <entry_point TYPE="field" FQNAME="rife.bld.extension.testing.RandomStringResolverTests.FieldInjection$4TestClass notAString" />
       <entry_point TYPE="field" FQNAME="rife.bld.extension.testing.RandomStringResolverTests.FieldInjection$4TestClass staticField" />
+      <entry_point TYPE="field" FQNAME="rife.bld.testing.RandomStringResolverTest.FieldInjection.SuperClass superField" />
+      <entry_point TYPE="field" FQNAME="rife.bld.testing.RandomStringResolverTest.FieldInjection$1TestClass field" />
+      <entry_point TYPE="field" FQNAME="rife.bld.testing.RandomStringResolverTest.FieldInjection$6TestClass fieldAnnotated" />
+      <entry_point TYPE="field" FQNAME="rife.bld.testing.RandomStringResolverTest.FieldInjection$6TestClass fieldNotAnnotated" />
+      <entry_point TYPE="field" FQNAME="rife.bld.testing.RandomStringResolverTest.FieldInjection$2TestClass injected" />
+      <entry_point TYPE="field" FQNAME="rife.bld.testing.RandomStringResolverTest.FieldInjection$6TestClass staticField" />
+      <entry_point TYPE="field" FQNAME="rife.bld.testing.RandomStringResolverTest.FieldInjection$3TestClass stringList" />
+      <entry_point TYPE="field" FQNAME="rife.bld.testing.RandomStringResolverTest.FieldInjection$5TestClass stringSet" />
+      <entry_point TYPE="field" FQNAME="rife.bld.testing.RandomStringResolverTest.FieldInjection$4SubClass subField" />
     </entry_points>
     <list size="1">
       <item index="0" class="java.lang.String" itemvalue="rife.bld.testing.RandomRange" />
@@ -94,6 +103,24 @@
     <pattern value="rife.bld.extension.testing.RandomStringResolverTests.FieldInjection.SuperClass" />
     <pattern value="rife.bld.extension.testing.CaptureOutput" />
     <pattern value="rife.bld.extension.TestingHelpersBuild" method="spotbugs" />
+    <pattern value="rife.bld.TestingHelpersBuild" method="pmd" />
+    <pattern value="rife.bld.TestingHelpersBuild" method="reporter" />
+    <pattern value="rife.bld.TestingHelpersBuild" method="spotbugs" />
+    <pattern value="rife.bld.TestingHelpersBuild" />
+    <pattern value="rife.bld.testing.RandomStringResolverTest.FieldInjection" method="allowInjectedValueOnPrivateField" />
+    <pattern value="rife.bld.testing.RandomStringResolverTest.FieldInjection" />
+    <pattern value="rife.bld.testing.RandomStringResolverTest.FieldInjection" method="injectRandomStringField" />
+    <pattern value="rife.bld.testing.RandomStringResolverTest.FieldInjection" method="injectRandomStringListField" />
+    <pattern value="rife.bld.testing.RandomStringResolverTest.FieldInjection" method="injectRandomStringMultipleAndInheritedFields" />
+    <pattern value="rife.bld.testing.RandomStringResolverTest.FieldInjection" method="injectRandomStringSetField" />
+    <pattern value="rife.bld.testing.RandomStringResolverTest" />
+    <pattern value="rife.bld.testing.RandomStringResolverTest.FieldInjection" method="skipNonStringOrUnannotatedFields" />
+    <pattern value="rife.bld.testing.RandomStringResolverTest.FieldInjection$4SubClass" />
+    <pattern value="rife.bld.testing.RandomStringResolverTest.FieldInjection$1TestClass" />
+    <pattern value="rife.bld.testing.RandomStringResolverTest.FieldInjection$2TestClass" />
+    <pattern value="rife.bld.testing.RandomStringResolverTest.FieldInjection$3TestClass" />
+    <pattern value="rife.bld.testing.RandomStringResolverTest.FieldInjection$5TestClass" />
+    <pattern value="rife.bld.testing.RandomStringResolverTest.FieldInjection$6TestClass" />
     <writeAnnotations>
       <writeAnnotation name="rife.bld.extension.testing.RandomRange" />
       <writeAnnotation name="rife.bld.extension.testing.RandomString" />

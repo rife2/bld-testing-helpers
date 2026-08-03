@@ -16,7 +16,11 @@
 
 package rife.bld.testing;
 
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
+
 import java.security.SecureRandom;
+import java.util.Objects;
 
 /**
  * Provides static methods for generating random values and predefined character sets.
@@ -27,6 +31,7 @@ import java.security.SecureRandom;
  * @author <a href="https://erik.thauvin.net/">Erik C. Thauvin</a>
  * @since 1.0
  */
+@NullMarked
 @SuppressWarnings("PMD.TestClassWithoutTestCases")
 public final class TestingUtils {
 
@@ -58,16 +63,16 @@ public final class TestingUtils {
      */
     public static final String URL_SAFE_CHARACTERS =
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+    static final String CANNOT_BE_NULL = " cannot be null";
+
     private static final SecureRandom secureRandom = new SecureRandom();
 
     private TestingUtils() {
     }
 
     /**
-     * Generates a random integer within the specified range.
-     *
-     * <p>Note: {@code max} must not be {@link Integer#MAX_VALUE}, as {@code max + 1} would
-     * overflow. Passing {@code Integer.MAX_VALUE} as {@code max} results in undefined behavior.
+     * Generates a random integer within the specified range (inclusive).
      *
      * @param min the minimum value (inclusive) of the random number
      * @param max the maximum value (inclusive) of the random number
@@ -79,7 +84,17 @@ public final class TestingUtils {
             throw new IllegalArgumentException(
                     "The minimum value (%d) cannot be greater than maximum value (%d)".formatted(min, max));
         }
-        return secureRandom.nextInt(min, max + 1);
+        if (min == max) {
+            return min;
+        }
+        // Avoid overflow on max+1 when max == Integer.MAX_VALUE
+        long range = max - min + 1L;
+        if (range <= Integer.MAX_VALUE) {
+            return min + secureRandom.nextInt((int) range);
+        } else {
+            // Full int range (min=Integer.MIN_VALUE, max=Integer.MAX_VALUE)
+            return secureRandom.nextInt();
+        }
     }
 
     /**
@@ -94,15 +109,16 @@ public final class TestingUtils {
      * @param characters the character set to use; duplicate characters increase their selection
      *                   probability
      * @return a randomly generated string of the specified length
-     * @throws IllegalArgumentException if the length is non-positive or the character set is
-     *                                  {@code null} or empty
+     * @throws NullPointerException     if the character set is {@code null}
+     * @throws IllegalArgumentException if length is non-positive or the character set is empty
      */
     public static String generateRandomString(int length, String characters) {
         if (length <= 0) {
             throw new IllegalArgumentException("Length must be greater than 0");
         }
-        if (isEmpty(characters)) {
-            throw new IllegalArgumentException("Characters cannot be null or empty");
+        Objects.requireNonNull(characters, "Characters" + CANNOT_BE_NULL);
+        if (characters.isEmpty()) {
+            throw new IllegalArgumentException("Characters cannot be empty");
         }
 
         var result = new StringBuilder(length);
@@ -144,7 +160,7 @@ public final class TestingUtils {
      * @param s the string to check
      * @return {@code true} if the string is null or empty, {@code false} otherwise
      */
-    public static boolean isEmpty(String s) {
+    public static boolean isEmpty(@Nullable String s) {
         return s == null || s.isEmpty();
     }
 }

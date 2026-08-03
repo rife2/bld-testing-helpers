@@ -99,6 +99,7 @@ class CapturedOutputTest {
     }
 
     @Test
+    @SuppressWarnings("DataFlowIssue")
     void nullArgumentChecks() {
         var out = new java.io.ByteArrayOutputStream();
         var err = new java.io.ByteArrayOutputStream();
@@ -255,7 +256,7 @@ class CapturedOutputTest {
             assertEquals("c", entries.get(5).content());
             assertEquals("CharSequence: (start, end): ", entries.get(6).content());
             assertEquals("b", entries.get(7).content());
-            assertEquals("null", entries.get(8).content());
+            assertEquals("ul", entries.get(8).content());
         }
 
         @Test
@@ -282,7 +283,7 @@ class CapturedOutputTest {
             System.out.print((String) null);
 
             var entries = output.getChronologicalEntries();
-            assertEquals(18, entries.size());
+            assertEquals(19, entries.size());
 
             // Verify content types are captured as strings
             assertEquals("String: ", entries.get(0).content());
@@ -775,6 +776,115 @@ class CapturedOutputTest {
 
             var lines = captured.getOutLines();
             assertEquals(List.of("Hello World"), lines);
+        }
+    }
+
+    @Nested
+    @DisplayName("write(int) Tests")
+    class WriteIntTests {
+
+        @Test
+        @CaptureOutput
+        void writeIgnoresHighOrderBitsPerOutputStreamContract(CapturedOutput output) {
+            // OutputStream#write(int): "the 24 high-order bits are ignored" - 0x141 and 0x41
+            // must behave identically ('A').
+            System.out.write(0x141);
+
+            assertEquals("A", output.getOut());
+            assertEquals("A", output.getChronologicalEntries().get(0).content());
+        }
+
+        @Test
+        @CaptureOutput
+        void writeInterleavedWithPrintPreservesOverallChronologicalOrder(CapturedOutput output) {
+            System.out.print("before-");
+            System.out.write('X');
+            System.out.print("-after");
+
+            var entries = output.getChronologicalEntries();
+            assertEquals(3, entries.size());
+            assertEquals("before-", entries.get(0).content());
+            assertEquals("X", entries.get(1).content());
+            assertEquals("-after", entries.get(2).content());
+        }
+
+        @Test
+        @CaptureOutput
+        void writeMultipleBytesPreservesChronologicalOrder(CapturedOutput output) {
+            System.out.write('a');
+            System.err.write('b');
+            System.out.write('c');
+
+            var entries = output.getChronologicalEntries();
+            assertEquals(3, entries.size());
+            assertEquals("a", entries.get(0).content());
+            assertEquals(CapturedOutput.OutputType.STDOUT, entries.get(0).type());
+            assertEquals("b", entries.get(1).content());
+            assertEquals(CapturedOutput.OutputType.STDERR, entries.get(1).type());
+            assertEquals("c", entries.get(2).content());
+            assertEquals(CapturedOutput.OutputType.STDOUT, entries.get(2).type());
+        }
+
+        @Test
+        @CaptureOutput
+        void writeOfMultiByteUtf8SequenceIsCorrectRawButNotChronologically(CapturedOutput output) {
+            // 'é' (U+00E9) is the two UTF-8 bytes 0xC3 0xA9.
+            System.out.write(0xC3);
+            System.out.write(0xA9);
+
+            // getOut() decodes the raw byte buffer as a whole, so this is correct:
+            assertEquals("é", output.getOut());
+            assertArrayEquals(new byte[]{(byte) 0xC3, (byte) 0xA9}, output.getOutAsBytes());
+
+            // write(int)'s chronological entries widen each byte independently (documented
+            // limitation) - they do NOT reassemble into 'é'.
+            var entries = output.getChronologicalEntries();
+            assertEquals(2, entries.size());
+            assertEquals(0xC3, entries.get(0).content().charAt(0));
+            assertEquals(0xA9, entries.get(1).content().charAt(0));
+        }
+
+        @Test
+        @CaptureOutput
+        void writeSingleAsciiByteToStderr(CapturedOutput output) {
+            System.err.write('Z');
+
+            assertEquals("Z", output.getErr());
+            assertArrayEquals(new byte[]{'Z'}, output.getErrAsBytes());
+
+            var entries = output.getChronologicalEntries();
+            assertEquals(1, entries.size());
+            assertEquals(CapturedOutput.OutputType.STDERR, entries.get(0).type());
+            assertEquals("Z", entries.get(0).content());
+        }
+
+        @Test
+        @CaptureOutput
+        void writeSingleAsciiByteToStdout(CapturedOutput output) {
+            System.out.write('A');
+
+            assertEquals("A", output.getOut());
+            assertArrayEquals(new byte[]{'A'}, output.getOutAsBytes());
+
+            var entries = output.getChronologicalEntries();
+            assertEquals(1, entries.size());
+            assertEquals(CapturedOutput.OutputType.STDOUT, entries.get(0).type());
+            assertEquals("A", entries.get(0).content());
+        }
+
+        @Test
+        @CaptureOutput
+        void writeWidensFullByteRangeWithoutSignExtension(CapturedOutput output) {
+            // 0xFF as a byte is -1; the chronological entry must widen it to char 0xFF (255),
+            // not sign-extend it to char 0xFFFF.
+            System.out.write(0xFF);
+
+            assertEquals(1, output.getOutAsBytes().length);
+            assertEquals((byte) 0xFF, output.getOutAsBytes()[0]);
+
+            var content = output.getChronologicalEntries().get(0).content();
+            assertEquals(1, content.length());
+            assertEquals(0xFF, content.charAt(0));
         }
     }
 }

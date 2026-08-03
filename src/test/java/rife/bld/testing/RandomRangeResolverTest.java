@@ -192,6 +192,7 @@ class RandomRangeResolverTest {
         @Test
         @DisplayName("injects using default min/max if not specified")
         void injectsDefaultRangeWhenNotSpecified() throws Exception {
+            @SuppressWarnings("unused")
             class TestClass {
 
                 @RandomRange
@@ -201,6 +202,7 @@ class RandomRangeResolverTest {
                     return field;
                 }
             }
+
             var testInstance = new TestClass();
             var resolver = new RandomRangeResolver();
 
@@ -213,6 +215,7 @@ class RandomRangeResolverTest {
         @Test
         @DisplayName("injects random int into multiple and inherited fields")
         void injectsMultipleAndInheritedFields() throws Exception {
+            //noinspection unused
             class BaseClass {
 
                 @RandomRange(min = 20, max = 30)
@@ -223,6 +226,7 @@ class RandomRangeResolverTest {
                 }
             }
 
+            //noinspection unused
             class ChildClass extends BaseClass {
 
                 @RandomRange(min = 1, max = 2)
@@ -265,6 +269,7 @@ class RandomRangeResolverTest {
         @Test
         @DisplayName("injects random int into private field")
         void injectsRandomIntPrivateField() throws Exception {
+            //noinspection unused
             class TestClass {
 
                 @RandomRange(min = 10, max = 15)
@@ -286,6 +291,7 @@ class RandomRangeResolverTest {
         @Test
         @DisplayName("injects value into private field even if originally inaccessible")
         void injectsValueIntoPrivateFieldRegardlessOfAccessibility() throws Exception {
+            //noinspection unused
             class TestClass {
 
                 @RandomRange(min = 1, max = 2)
@@ -311,6 +317,7 @@ class RandomRangeResolverTest {
         @Test
         @DisplayName("injects when min equals max")
         void injectsWhenMinEqualsMax() throws Exception {
+            //noinspection unused
             class TestClass {
 
                 @RandomRange(min = 5, max = 5)
@@ -352,9 +359,11 @@ class RandomRangeResolverTest {
             class TestClass {
 
                 @RandomRange
+                @SuppressWarnings("unused")
                 private static int staticInt;
 
                 @RandomRange
+                @SuppressWarnings("unused")
                 private int injected;
 
                 @SuppressWarnings("unused")
@@ -385,6 +394,7 @@ class RandomRangeResolverTest {
             class TestClass {
 
                 @RandomRange(min = 10, max = 5)
+                @SuppressWarnings("unused")
                 private int failField;
             }
             var testInstance = new TestClass();
@@ -422,6 +432,7 @@ class RandomRangeResolverTest {
             @Test
             @DisplayName("generates empty List when size is 0")
             void generatesEmptyListWhenSizeIsZero() throws Exception {
+                //noinspection unused
                 class TestClass {
 
                     @RandomRange(min = 1, max = 10)
@@ -445,6 +456,7 @@ class RandomRangeResolverTest {
             @Test
             @DisplayName("generates List with duplicate values allowed")
             void generatesListWithDuplicates() throws Exception {
+                //noinspection unused
                 class TestClass {
 
                     @RandomRange(size = 10, min = 1, max = 3)  // only 3 possible values
@@ -470,6 +482,7 @@ class RandomRangeResolverTest {
             @Test
             @DisplayName("generates Set with maximum possible unique values")
             void generatesSetWithMaxUniqueValues() throws Exception {
+                //noinspection unused
                 class TestClass {
 
                     @RandomRange(size = 5, min = 1, max = 5)  // exactly 5 possible values
@@ -498,6 +511,7 @@ class RandomRangeResolverTest {
             @Test
             @DisplayName("generates Set with single element range")
             void generatesSetWithSingleElementRange() throws Exception {
+                //noinspection unused
                 class TestClass {
 
                     @RandomRange(size = 1, min = 7, max = 7)
@@ -526,6 +540,7 @@ class RandomRangeResolverTest {
             @Test
             @DisplayName("injects List<Integer> into field")
             void injectsListIntoField() throws Exception {
+                //noinspection unused
                 class TestClass {
 
                     @RandomRange(size = 5, min = 10, max = 20)
@@ -552,6 +567,7 @@ class RandomRangeResolverTest {
             @Test
             @DisplayName("injects List<Integer> with default min/max")
             void injectsListWithDefaults() throws Exception {
+                //noinspection unused
                 class TestClass {
 
                     @RandomRange(size = 3)
@@ -578,6 +594,7 @@ class RandomRangeResolverTest {
             @Test
             @DisplayName("injects Set<Integer> into field")
             void injectsSetIntoField() throws Exception {
+                //noinspection unused
                 class TestClass {
 
                     @RandomRange(size = 8, min = 1, max = 50)
@@ -604,6 +621,8 @@ class RandomRangeResolverTest {
             @Test
             @DisplayName("skips non-List/Set fields even with size parameter")
             void skipsNonCollectionFieldsWithSize() throws Exception {
+                //noinspection unused
+                //noinspection unused
                 class TestClass {
 
                     @RandomRange(size = 5, min = 1, max = 10)
@@ -642,6 +661,7 @@ class RandomRangeResolverTest {
                 class TestClass {
 
                     @RandomRange(size = 10, min = 1, max = 5)  // range of 5, requesting 10
+                    @SuppressWarnings("unused")
                     private Set<Integer> setField;
                 }
 

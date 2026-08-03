@@ -78,7 +78,7 @@ public class RandomStringResolver implements ParameterResolver, TestInstancePost
     @Override
     @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
     public void postProcessTestInstance(Object testInstance, ExtensionContext context) throws IllegalAccessException {
-        Objects.requireNonNull(testInstance, "testInstance must not be null");
+        Objects.requireNonNull(testInstance, "testInstance" + TestingUtils.CANNOT_BE_NULL);
 
         for (var currentClass = testInstance.getClass(); currentClass != Object.class;
              currentClass = currentClass.getSuperclass()) {

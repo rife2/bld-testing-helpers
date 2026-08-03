@@ -47,6 +47,7 @@ class RandomStringResolverTest {
         @Test
         @DisplayName("should allow access to injected value even if field is private")
         void allowInjectedValueOnPrivateField() throws Exception {
+            //noinspection unused
             class TestClass {
 
                 @RandomString(length = 7)
@@ -70,6 +71,7 @@ class RandomStringResolverTest {
         @Test
         @DisplayName("should inject random string into private field")
         void injectRandomStringField() throws Exception {
+            //noinspection unused
             class TestClass {
 
                 @RandomString(length = 8, characters = TestingUtils.UPPERCASE_CHARACTERS)
@@ -92,6 +94,7 @@ class RandomStringResolverTest {
         @Test
         @DisplayName("should inject list of random strings into field")
         void injectRandomStringListField() throws Exception {
+            //noinspection unused
             class TestClass {
 
                 @RandomString(size = 5, length = 6, characters = TestingUtils.NUMERIC_CHARACTERS)
@@ -118,6 +121,7 @@ class RandomStringResolverTest {
         @Test
         @DisplayName("should inject random string into multiple annotated fields including inherited ones")
         void injectRandomStringMultipleAndInheritedFields() throws Exception {
+            //noinspection unused
             class SubClass extends SuperClass {
 
                 @RandomString(length = 12)
@@ -146,6 +150,7 @@ class RandomStringResolverTest {
         @Test
         @DisplayName("should inject set of unique random strings into field")
         void injectRandomStringSetField() throws Exception {
+            //noinspection unused
             class TestClass {
 
                 @RandomString(size = 4, length = 8)
@@ -172,6 +177,7 @@ class RandomStringResolverTest {
         @Test
         @DisplayName("should not inject into fields that aren't String or not annotated")
         void skipNonStringOrUnannotatedFields() throws Exception {
+            //noinspection unused
             class TestClass {
 
                 @SuppressWarnings("PMD.UnusedPrivateField")
@@ -179,9 +185,11 @@ class RandomStringResolverTest {
 
                 @RandomString
                 private static String staticField;
+
                 @RandomString
                 private String fieldAnnotated;
-                @SuppressWarnings({"unused"})
+
+                @SuppressWarnings("PMD.UnusedPrivateField")
                 private String fieldNotAnnotated;
             }
             var testInstance = new TestClass();
@@ -746,7 +754,7 @@ class RandomStringResolverTest {
         void throwExceptionForEmptyCharacters() {
             var exception = assertThrows(IllegalArgumentException.class,
                     () -> TestingUtils.generateRandomString(10, ""));
-            assertEquals("Characters cannot be null or empty", exception.getMessage());
+            assertEquals("Characters cannot be empty", exception.getMessage());
         }
 
         @Test
@@ -759,10 +767,11 @@ class RandomStringResolverTest {
 
         @Test
         @DisplayName("should throw exception for null characters")
+        @SuppressWarnings("DataFlowIssue")
         void throwExceptionForNullCharacters() {
-            var exception = assertThrows(IllegalArgumentException.class,
+            var exception = assertThrows(NullPointerException.class,
                     () -> TestingUtils.generateRandomString(10, null));
-            assertEquals("Characters cannot be null or empty", exception.getMessage());
+            assertEquals("Characters cannot be null", exception.getMessage());
         }
 
         @Test
