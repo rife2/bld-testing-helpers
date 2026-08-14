@@ -98,6 +98,8 @@ public class TestingHelpersBuild extends Project {
                 )
                 .signKey(property("sign.key"))
                 .signPassphrase(property("sign.passphrase"));
+
+        compileOperation().compileOptions().encoding("UTF-8");
     }
 
     @Override
