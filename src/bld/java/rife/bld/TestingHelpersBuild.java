@@ -61,7 +61,7 @@ public class TestingHelpersBuild extends Project {
                 .include(junitJupiter)
                 .include(junitPlatform)
                 .include(dependency("io.github.classgraph", "classgraph",
-                        version(4, 8, 191)))
+                        version(4, 8, 194)))
                 .include(dependency("org.mockito", "mockito-junit-jupiter",
                         version(5, 23, 0)));
 
