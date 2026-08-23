@@ -16,6 +16,7 @@
 
 package rife.bld.testing;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.junit.jupiter.api.extension.*;
 
 import java.lang.reflect.Modifier;
@@ -72,6 +73,7 @@ public class RandomRangeResolver implements ParameterResolver, TestInstancePostP
      */
     @Override
     @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
+    @SuppressFBWarnings("RFI_SET_ACCESSIBLE")
     public void postProcessTestInstance(Object testInstance, ExtensionContext context) throws Exception {
         for (var clazz = testInstance.getClass(); clazz != Object.class; clazz = clazz.getSuperclass()) {
             for (var field : clazz.getDeclaredFields()) {
@@ -260,6 +262,7 @@ public class RandomRangeResolver implements ParameterResolver, TestInstancePostP
     // Note: validateRange is intentionally called here as a fail-fast guard before any
     // allocation occurs. The delegate methods (generateRandomIntList, generateRandomIntSet)
     // also call validateRange independently for defence-in-depth when invoked directly.
+    @SuppressFBWarnings("URV_UNRELATED_RETURN_VALUES")
     private static Object generateValue(Class<?> parameterType, int size, int min, int max) {
         validateRange(min, max);
 

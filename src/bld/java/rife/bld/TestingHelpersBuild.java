@@ -55,7 +55,7 @@ public class TestingHelpersBuild extends Project {
                 .include(junitJupiter)
                 .include(junitPlatform)
                 .include(dependency("com.github.spotbugs", "spotbugs-annotations",
-                        version(4, 10, 3)));
+                        version(4, 10, 4)));
         scope(test)
                 .include(dependency("org.jspecify", "jspecify", "1.0.1"))
                 .include(junitJupiter)

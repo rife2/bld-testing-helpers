@@ -101,8 +101,8 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
     @Override
     public boolean supportsTestTemplate(ExtensionContext context) {
         return context.getTestMethod()
-                .map(m -> m.isAnnotationPresent(RetryTest.class))
-                .orElse(false);
+                .filter(m -> m.isAnnotationPresent(RetryTest.class))
+                .isPresent();
     }
 
     @Override

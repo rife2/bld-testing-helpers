@@ -16,6 +16,7 @@
 
 package rife.bld.testing;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.ParameterContext;
 import org.junit.jupiter.api.extension.ParameterResolver;
@@ -77,6 +78,7 @@ public class RandomStringResolver implements ParameterResolver, TestInstancePost
      */
     @Override
     @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
+    @SuppressFBWarnings("RFI_SET_ACCESSIBLE")
     public void postProcessTestInstance(Object testInstance, ExtensionContext context) throws IllegalAccessException {
         Objects.requireNonNull(testInstance, "testInstance" + TestingUtils.CANNOT_BE_NULL);
 
@@ -217,6 +219,7 @@ public class RandomStringResolver implements ParameterResolver, TestInstancePost
     // Generates the appropriate value based on the parameter type.
     // Note: this method is only called after supportsParameter() has already validated the type,
     // so the final throw branch is a defensive guard and should not be reachable in normal usage.
+    @SuppressFBWarnings("URV_UNRELATED_RETURN_VALUES")
     private Object generateValue(Class<?> parameterType, int size, int length, String characters) {
         if (parameterType == String.class) {
             return TestingUtils.generateRandomString(length, characters);

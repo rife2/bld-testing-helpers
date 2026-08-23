@@ -16,6 +16,7 @@
 
 package rife.bld.testing;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.extension.*;
@@ -95,6 +96,7 @@ public class CaptureOutputExtension implements BeforeEachCallback, AfterEachCall
      * @throws Exception if an error occurs during cleanup
      */
     @Override
+    @SuppressFBWarnings("FCBL_FIELD_COULD_BE_LOCAL")
     public void afterEach(ExtensionContext context) throws Exception {
         // Restore original streams
         System.setOut(originalOut);
