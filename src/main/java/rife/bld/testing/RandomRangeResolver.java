@@ -261,7 +261,7 @@ public class RandomRangeResolver implements ParameterResolver, TestInstancePostP
     // Generates the appropriate value based on the parameter type.
     // Note: validateRange is intentionally called here as a fail-fast guard before any
     // allocation occurs. The delegate methods (generateRandomIntList, generateRandomIntSet)
-    // also call validateRange independently for defence-in-depth when invoked directly.
+    // also call validateRange independently for defense-in-depth when invoked directly.
     @SuppressFBWarnings("URV_UNRELATED_RETURN_VALUES")
     private static Object generateValue(Class<?> parameterType, int size, int min, int max) {
         validateRange(min, max);

@@ -224,7 +224,7 @@ public class CaptureOutputExtension implements BeforeEachCallback, AfterEachCall
          * The byte is written to the underlying capture stream as per
          * {@link PrintStream#write(int)}. For the chronological entry, the byte is widened
          * directly to a {@code char} (not charset-decoded) — this is only correct for
-         * single-byte (ASCII-range) values. A byte that is part of a multi-byte UTF-8
+         * single-byte (ASCII-range) values. A byte that is part of a multibyte UTF-8
          * sequence will produce an incorrect chronological entry, since a single byte
          * cannot be decoded on its own. This does not affect {@link CapturedOutput#getOut()}
          * or {@link CapturedOutput#getErr()}, which decode the raw captured bytes as a
