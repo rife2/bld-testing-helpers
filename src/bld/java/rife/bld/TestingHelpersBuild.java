@@ -37,7 +37,7 @@ public class TestingHelpersBuild extends Project {
         pkg = "rife.bld";
         name = "Testing Helpers";
         archiveBaseName = "bld-testing-helpers";
-        version = version(1, 1, 0, "SNAPSHOT");
+        version = version(1, 1, 0);
 
         javaRelease = 17;
 
@@ -61,7 +61,7 @@ public class TestingHelpersBuild extends Project {
                 .include(junitJupiter)
                 .include(junitPlatform)
                 .include(dependency("io.github.classgraph", "classgraph",
-                        version(4, 8, 194)))
+                        version(4, 8, 195)))
                 .include(dependency("org.mockito", "mockito-junit-jupiter",
                         version(5, 23, 0)));
 
