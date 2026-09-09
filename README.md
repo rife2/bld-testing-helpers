@@ -24,9 +24,9 @@ for more information.
 
 The following annotations are provided:
 
-| Annotation                                                                                                                     | Description                                                         |
-|:-------------------------------------------------------------------------------------------------------------------------------|:--------------------------------------------------------------------|
-| [`VisibleForTesting`](https://rife2.github.io/bld-testing-helpers/rife/bld/testing/VisibleForTesting.html)           | Indicates that a class member's visibility has been relaxed testing |
+| Annotation                                                                                                 | Description                                                             |
+|:-----------------------------------------------------------------------------------------------------------|:------------------------------------------------------------------------|
+| [`VisibleForTesting`](https://rife2.github.io/bld-testing-helpers/rife/bld/testing/VisibleForTesting.html) | Indicates that a class member's visibility has been relaxed for testing |
 
 ## JUnit Annotations
 
