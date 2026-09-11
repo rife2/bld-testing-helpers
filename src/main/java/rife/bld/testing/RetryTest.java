@@ -18,6 +18,8 @@ package rife.bld.testing;
 
 import org.junit.jupiter.api.TestTemplate;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -68,6 +70,7 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @TestTemplate
 @ExtendWith(RetryExtension.class)
+@Execution(ExecutionMode.SAME_THREAD)
 public @interface RetryTest {
 
     /**

@@ -1,17 +1,38 @@
+/*
+ * Copyright 2025-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package rife.bld.testing;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtensionConfigurationException;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.InvocationInterceptor.Invocation;
 import org.junit.jupiter.api.extension.ReflectiveInvocationContext;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
@@ -33,6 +54,7 @@ class RetryExtensionTest {
     @BeforeEach
     void beforeEach() {
         mockExtensionContext = mock(ExtensionContext.class);
+        ExtensionContext mockParentContext = mock(ExtensionContext.class);
         //noinspection unchecked
         mockInvocation = mock(Invocation.class);
         //noinspection unchecked
@@ -77,7 +99,8 @@ class RetryExtensionTest {
 
         when(mockExtensionContext.getTestMethod()).thenReturn(Optional.of(mockTestMethod));
         when(mockExtensionContext.getRequiredTestMethod()).thenReturn(mockTestMethod);
-        when(mockExtensionContext.getParent()).thenReturn(Optional.empty());
+        when(mockExtensionContext.getParent()).thenReturn(Optional.of(mockParentContext));
+        when(mockParentContext.getStore(any())).thenReturn(store);
         when(mockExtensionContext.getStore(any())).thenReturn(store);
 
         when(mockTestMethod.getAnnotation(RetryTest.class)).thenReturn(mockRetryTest);
@@ -151,6 +174,7 @@ class RetryExtensionTest {
         // attempt 3 – outcome already decided, extension short-circuits (finished flag)
         assertDoesNotThrow(() -> callAttempt(inv3));
         verify(inv3, never()).proceed();
+        verify(inv3, times(1)).skip();
         assertEquals(2, attempts.get(), "third invocation should not re-run method after success");
     }
 
@@ -183,11 +207,12 @@ class RetryExtensionTest {
         when(mockRetryTest.value()).thenReturn(3);
         var contexts = retryExtension.provideTestTemplateInvocationContexts(mockExtensionContext).toList();
         assertEquals(3, contexts.size());
-        assertEquals("testFoo", contexts.get(0).getDisplayName(1));
+        assertTrue(contexts.get(0).getDisplayName(1).startsWith("testFoo"));
+        assertTrue(contexts.get(0).getDisplayName(1).contains("[1/"));
         when(mockRetryTest.name()).thenReturn("custom name");
         contexts = retryExtension.provideTestTemplateInvocationContexts(mockExtensionContext).toList();
         assertEquals(3, contexts.size());
-        assertEquals("custom name", contexts.get(0).getDisplayName(1));
+        assertTrue(contexts.get(0).getDisplayName(1).startsWith("custom name"));
     }
 
     @Test
@@ -223,6 +248,7 @@ class RetryExtensionTest {
         var inv3 = mock(Invocation.class);
         assertDoesNotThrow(() -> callAttempt(inv3));
         verify(inv3, never()).proceed();
+        verify(inv3, times(1)).skip();
     }
 
     @Test
@@ -377,6 +403,7 @@ class RetryExtensionTest {
         var inv2 = mock(Invocation.class);
         assertDoesNotThrow(() -> callAttempt(inv2));
         verify(inv2, never()).proceed();
+        verify(inv2, times(1)).skip();
     }
 
     @Test
@@ -386,5 +413,94 @@ class RetryExtensionTest {
         assertFalse(retryExtension.supportsTestTemplate(mockExtensionContext));
         when(mockExtensionContext.getTestMethod()).thenReturn(Optional.empty());
         assertFalse(retryExtension.supportsTestTemplate(mockExtensionContext));
+    }
+
+    @Nested
+    @DisplayName("Parallel execution and data race")
+    class ParallelExecutionRegression {
+
+        @Test
+        @DisplayName("RetryState fields must be volatile or atomic to avoid data race")
+        void retryStateFieldsMustBeSafeForConcurrentVisibility() throws Exception {
+            Class<?> stateClass = null;
+            for (var inner : RetryExtension.class.getDeclaredClasses()) {
+                if ("RetryState".equals(inner.getSimpleName())) {
+                    stateClass = inner;
+                    break;
+                }
+            }
+            assertNotNull(stateClass, "RetryState inner class should exist");
+
+            var attemptField = stateClass.getDeclaredField("attempt");
+            var finishedField = stateClass.getDeclaredField("finished");
+
+            boolean attemptSafe = java.lang.reflect.Modifier.isVolatile(attemptField.getModifiers())
+                    || AtomicInteger.class.isAssignableFrom(attemptField.getType());
+            boolean finishedSafe = java.lang.reflect.Modifier.isVolatile(finishedField.getModifiers())
+                    || AtomicBoolean.class.isAssignableFrom(finishedField.getType())
+                    || AtomicInteger.class.isAssignableFrom(finishedField.getType());
+
+            assertTrue(attemptSafe, "attempt must be volatile or Atomic - plain int causes data race with parallel execution");
+            assertTrue(finishedSafe, "finished must be volatile or Atomic - plain boolean causes data race");
+        }
+
+        @Test
+        @DisplayName("@RetryTest must force SAME_THREAD to prevent concurrent invocations")
+        void retryTestMustHaveSameThreadExecutionMode() {
+            var exec = RetryTest.class.getAnnotation(Execution.class);
+            assertNotNull(exec, "@RetryTest should be meta-annotated with @Execution");
+            assertEquals(ExecutionMode.SAME_THREAD, exec.value(),
+                    "@RetryTest must use SAME_THREAD - TestTemplate provides all N contexts upfront, "
+                            + "so with parallel.enabled=true JUnit would otherwise run BODY 1,2,3 concurrently");
+        }
+    }
+
+    @Nested
+    @DisplayName("Short-circuit must call skip()")
+    class ShortCircuitMustCallSkip {
+
+        @Test
+        @DisplayName("failing fast on non-retryable exception must skip remaining")
+        void failingFastShouldSkipRemaining() throws Throwable {
+            when(mockRetryTest.withExceptions()).thenReturn(new Class[]{IOException.class});
+            var inv1 = mock(Invocation.class);
+            var inv2 = mock(Invocation.class);
+
+            doThrow(new RuntimeException("non-retryable")).when(inv1).proceed();
+
+            var thrown = assertThrows(RuntimeException.class, () -> callAttempt(inv1));
+            assertEquals("non-retryable", thrown.getMessage());
+
+            // second invocation should be skipped because finished=true after fail-fast
+            assertDoesNotThrow(() -> callAttempt(inv2));
+            verify(inv2, never()).proceed();
+            verify(inv2, times(1)).skip();
+        }
+
+        @Test
+        @DisplayName("passing on first attempt should skip remaining, not violate interceptor contract")
+        void passingFirstAttemptShouldSkipRemaining() throws Throwable {
+            when(mockRetryTest.value()).thenReturn(3);
+            var inv1 = mock(Invocation.class);
+            var inv2 = mock(Invocation.class);
+            var inv3 = mock(Invocation.class);
+
+            doAnswer(inv -> null).when(inv1).proceed();
+
+            // attempt 1 passes -> finished=true
+            assertDoesNotThrow(() -> callAttempt(inv1));
+            verify(inv1, times(1)).proceed();
+            verify(inv1, never()).skip();
+
+            // attempts 2 and 3 must call skip(), not proceed(), and must not throw JUnitException
+            assertDoesNotThrow(() -> callAttempt(inv2));
+            assertDoesNotThrow(() -> callAttempt(inv3));
+
+            verify(inv2, never()).proceed();
+            verify(inv2, times(1)).skip();
+
+            verify(inv3, never()).proceed();
+            verify(inv3, times(1)).skip();
+        }
     }
 }

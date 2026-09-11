@@ -17,8 +17,11 @@
 package rife.bld.testing;
 
 import org.junit.jupiter.api.extension.*;
+import org.opentest4j.TestAbortedException;
 
 import java.lang.reflect.Method;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -82,22 +85,22 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
 
         var state = retryStateFor(extensionContext, method);
 
-        if (state.finished) {
-            // Outcome already decided by an earlier invocation; don't re-run the method.
+        if (state.finished.get()) {
+            invocation.skip();
             return;
         }
-        state.attempt++;
+        var currentAttempt = state.attempt.incrementAndGet();
 
         try {
             invocation.proceed();
-            state.finished = true;
+            state.finished.set(true);
         } catch (Throwable t) {
-            var isLast = state.attempt >= maxExecutions;
+            var isLast = currentAttempt >= maxExecutions;
             var retryable = shouldRetry(retryTest, t);
-            printError(t, state.attempt);
+            printError(t, currentAttempt);
 
             if (!retryable || isLast) {
-                state.finished = true;
+                state.finished.set(true);
                 throw t;
             }
 
@@ -108,12 +111,10 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     t.addSuppressed(e);
-                    state.finished = true;
+                    state.finished.set(true);
                     throw t;
                 }
             }
-            // swallow: retryable, attempts remain — this invocation reports as passed,
-            // and the next invocation context is given to JUnit
         }
     }
 
@@ -128,13 +129,17 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
     public Stream<TestTemplateInvocationContext> provideTestTemplateInvocationContexts(ExtensionContext context) {
         var method = context.getRequiredTestMethod();
         var retry = method.getAnnotation(RetryTest.class);
-        var maxExecutions = Math.max(retry.value(), 1);
+        var maxExecutions = retry.value();
+        if (maxExecutions < 1) {
+            throw new ExtensionConfigurationException("@RetryTest value must be >= 1, but was " + maxExecutions);
+        }
 
         return IntStream.rangeClosed(1, maxExecutions)
                 .mapToObj(i -> new TestTemplateInvocationContext() {
                     @Override
                     public String getDisplayName(int invocationIndex) {
-                        return retry.name().isEmpty() ? method.getName() : retry.name();
+                        var baseName = retry.name().isEmpty() ? method.getName() : retry.name();
+                        return baseName + " [" + invocationIndex + "/" + maxExecutions + "]";
                     }
                 });
     }
@@ -179,7 +184,11 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
         return state;
     }
 
+
     private boolean shouldRetry(RetryTest retryTest, Throwable throwable) {
+        if (throwable instanceof TestAbortedException) {
+            return false;
+        }
         var withExceptions = retryTest.withExceptions();
         if (withExceptions == null || withExceptions.length == 0) {
             return true;
@@ -193,13 +202,15 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
     }
 
     private ExtensionContext.Store storeFor(ExtensionContext context, Method method) {
-        var templateContext = context.getParent().orElse(context);
+        var templateContext = context.getParent()
+                .orElseThrow(() -> new ExtensionConfigurationException(
+                        "RetryExtension requires parent ExtensionContext for " + method));
         return templateContext.getStore(ExtensionContext.Namespace.create(RetryExtension.class, method));
     }
 
     private static final class RetryState {
 
-        int attempt;
-        boolean finished;
+        final AtomicInteger attempt = new AtomicInteger(0);
+        final AtomicBoolean finished = new AtomicBoolean(false);
     }
 }

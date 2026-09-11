@@ -199,7 +199,6 @@ public class RandomStringResolver implements ParameterResolver, TestInstancePost
 
         // When size is large, maxAttempts can exceed Integer.MAX_VALUE causing the guard to
         // never trigger. Both variables are now long to ensure correct comparison.
-        // FIX (Improvement): Use properly sized initial capacity to avoid HashSet rehashing at 75% fill.
         var set = new HashSet<String>(size * 4 / 3 + 1);
         long maxAttempts = (long) size * 100;
         long attempts = 0;
