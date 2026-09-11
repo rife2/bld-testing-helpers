@@ -16,10 +16,7 @@
 
 package rife.bld.testing;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtensionConfigurationException;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.InvocationInterceptor.Invocation;
@@ -40,7 +37,8 @@ import java.util.function.Function;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-@SuppressWarnings({"PMD.AvoidDuplicateLiterals", "PMD.DoNotUseThreads", "unchecked"})
+@SuppressWarnings({"PMD.AvoidDuplicateLiterals", "PMD.DoNotUseThreads", "unchecked",
+        "PMD.SignatureDeclareThrowsException", "PMD.TestClassWithoutTestCases"})
 class RetryExtensionTest {
 
     private Map<Object, Object> backingMap;
@@ -306,7 +304,6 @@ class RetryExtensionTest {
         verify(inv2, times(1)).skip();
     }
 
-    @SuppressWarnings("PMD.SignatureDeclareThrowsException")
     private void setMethod(String name) throws Exception {
         var currentMethod = TestScenarios.class.getDeclaredMethod(name);
         when(mockExtensionContext.getTestMethod()).thenReturn(Optional.of(currentMethod));
@@ -325,6 +322,7 @@ class RetryExtensionTest {
     }
 
     @SuppressWarnings({"DefaultAnnotationParam", "PMD.TestClassWithoutTestCases", "EmptyMethod"})
+    @Disabled("Deliberately invalid — reflection fixture only, never meant to run")
     static class TestScenarios {
 
         @RetryTest(3)
@@ -388,7 +386,7 @@ class RetryExtensionTest {
             assertEquals("Unknown error", msg);
         }
 
-        @SuppressWarnings({"PMD.SignatureDeclareThrowsException", "PMD.AvoidAccessibilityAlteration"})
+        @SuppressWarnings({"PMD.AvoidAccessibilityAlteration"})
         private String invokeGetMessageRecursively(Throwable t) throws Exception {
             var m = RetryExtension.class.getDeclaredMethod("getMessageRecursively", Throwable.class);
             m.setAccessible(true);

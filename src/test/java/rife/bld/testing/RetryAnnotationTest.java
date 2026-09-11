@@ -36,8 +36,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class RetryAnnotationTest {
 
     // Helper class with various annotation configurations for testing
-    @SuppressWarnings({"EmptyMethod", "PMD.DetachedTestCase", "PMD.JUnitJupiterTestNoPrivateModifier",
-            "DefaultAnnotationParam"})
+    @SuppressWarnings({"EmptyMethod", "PMD.DetachedTestCase", "DefaultAnnotationParam",
+            "PMD.JUnitJupiterTestNoPrivateModifier", "PMD.UnitTestShouldIncludeAssert"})
     private static final class TestMethodsWithAnnotations {
 
         @RetryTest(value = 5, name = "Custom Name")
@@ -92,7 +92,6 @@ class RetryAnnotationTest {
         }
 
         @Test
-        @SuppressWarnings("PMD.UnitTestShouldIncludeAssert")
         void methodWithOtherAnnotation() {
             // no-op
         }
@@ -342,6 +341,7 @@ class RetryAnnotationTest {
 
         @Test
         @DisplayName("Display name should include invocation index to avoid collisions")
+        @SuppressWarnings("SignatureDeclareThrowsException")
         void displayNameShouldIncludeIndex() throws Exception {
             var method = TestMethodsWithAnnotations.class.getDeclaredMethod("methodWithDefaultValues");
             var retry = method.getAnnotation(RetryTest.class);
@@ -368,6 +368,7 @@ class RetryAnnotationTest {
 
         @Test
         @DisplayName("RetryExtension.RetryState must be safe for concurrent visibility")
+        @SuppressWarnings("SignatureDeclareThrowsException")
         void retryStateMustBeSafe() throws Exception {
             Class<?> stateClass = null;
             for (var inner : RetryExtension.class.getDeclaredClasses()) {
