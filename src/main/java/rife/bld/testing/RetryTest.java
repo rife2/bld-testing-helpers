@@ -93,11 +93,12 @@ public @interface RetryTest {
     String name() default "";
 
     /**
-     * The maximum number of retry attempts for a failing test.
+     * The maximum number of total executions for a failing test.
      * <p>
-     * The test will be executed at most {@code value()} times after the initial failure.
+     * For example, {@code @RetryTest(3)} will execute at most 3 times in total:
+     * the initial attempt plus up to 2 retries.
      *
-     * @return the number of retry attempts. Must be greater than 0
+     * @return the total number of attempts. Must be greater than or equal to 1
      */
     int value() default 3;
 
@@ -106,6 +107,8 @@ public @interface RetryTest {
      * <p>
      * If empty, any exception triggers a retry. If specified, only matching
      * exceptions (or their causes) will be retried.
+     *
+     * @return the exception types that trigger a retry
      */
     Class<? extends Throwable>[] withExceptions() default {};
 }

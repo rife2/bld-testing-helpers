@@ -16,51 +16,55 @@
 
 package rife.bld.testing;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.junit.jupiter.api.extension.*;
 import org.opentest4j.TestAbortedException;
 
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 /**
- * JUnit extension that retries a failing {@link RetryTest} method.
+ * JUnit 5 extension that implements retry logic for {@link RetryTest}.
  * <p>
- * Implements {@link TestTemplateInvocationContextProvider} and {@link InvocationInterceptor}
- * to integrate with {@code @TestTemplate}. The test is retried up to {@link RetryTest#value()}
- * times with an optional {@link RetryTest#delay()} in seconds.
+ * Implements both {@link TestTemplateInvocationContextProvider} and {@link InvocationInterceptor}
+ * to keep the implementation in a single extension.
  * <p>
- * If {@link RetryTest#withExceptions()} is specified, only matching exception types
- * (including causes in the cause chain) will trigger a retry.
- * <p>
- * If a retry succeeds, the test passes. If all retries fail, the last exception is thrown.
- *
- * <h4>Limitations:</h4>
- * <ul>
- *     <li>{@code @TestTemplate} requires all possible invocation contexts to be provided
- *     upfront, so up to {@link RetryTest#value()} invocation contexts are always created,
- *     even once the outcome has already been decided by an earlier attempt.</li>
- *     <li>{@code @BeforeEach}/{@code @AfterEach} callbacks and test instance construction
- *     run for every provided invocation context, including ones skipped after the outcome
- *     is finalized. This is a cost of the {@code @TestTemplate} SPI and is not avoidable
- *     without a custom provider that dynamically shrinks the context count, which is not
- *     supported.</li>
- *     <li>Retry state is shared across sibling invocations via the parent
- *     {@link ExtensionContext.Store}, keyed per test method; it assumes invocation contexts
- *     for the same method run sequentially, not concurrently.</li>
- * </ul>
+ * <b>Bug fix - swallowed invocations:</b> Earlier versions swallowed a retryable exception
+ * and returned normally, causing JUnit to count the invocation as {@code successful}.
+ * That led to two visible bugs:
+ * <ol>
+ *   <li>IDE rerun of a single invocation:
+ *       {@code --select-unique-id='.../invocation:#1'} on an always-failing test reported
+ *       {@code 1 successful} because attempt #1 was swallowed.</li>
+ *   <li>Count inflation: {@code @RetryTest(3)} passing first time contributed 3 greens,
+ *       and always-failing contributed 2 passes + 1 failure.</li>
+ * </ol>
+ * The fix is to throw {@link TestAbortedException} for retryable intermediate failures
+ * instead of swallowing. Aborted invocations are not counted as success.
  *
  * @author <a href="https://erik.thauvin.net/">Erik C. Thauvin</a>
- * @author <a href="https://glaforge.dev/posts/2024/09/01/a-retryable-junit-5-extension/">Guillaume Laforge</a>
  * @see RetryTest
  * @since 1.0
  */
 public class RetryExtension implements TestTemplateInvocationContextProvider, InvocationInterceptor {
 
+    private final Map<Method, Optional<RetryTest>> retryTestCache = new ConcurrentHashMap<>();
+
+    /**
+     * Intercepts each test-template method invocation to apply retry logic.
+     */
     @Override
-    @SuppressWarnings({"PMD.DoNotUseThreads", "PMD.AvoidCatchingGenericException"})
+    @SuppressWarnings({"PMD.DoNotUseThreads", "PMD.AvoidCatchingGenericException", "PMD.PreserveStackTrace"})
+    @SuppressFBWarnings("EXS_EXCEPTION_SOFTENING_HAS_CHECKED")
     public void interceptTestTemplateMethod(Invocation<Void> invocation,
                                             ReflectiveInvocationContext<Method> invocationContext,
                                             ExtensionContext extensionContext)
@@ -72,17 +76,16 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
         }
 
         var method = methodOpt.get();
-        var retryTest = method.getAnnotation(RetryTest.class);
-        if (retryTest == null) {
+        var retryTestOpt = findRetryTest(method);
+        if (retryTestOpt.isEmpty()) {
             invocation.proceed();
             return;
         }
+        var retryTest = retryTestOpt.get();
 
-        int maxExecutions = retryTest.value();
-        if (maxExecutions < 1) {
-            throw new ExtensionConfigurationException("@RetryTest value must be >= 1, but was " + maxExecutions);
-        }
+        validate(method, retryTest);
 
+        var maxExecutions = retryTest.value();
         var state = retryStateFor(extensionContext, method);
 
         if (state.finished.get()) {
@@ -97,7 +100,7 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
         } catch (Throwable t) {
             var isLast = currentAttempt >= maxExecutions;
             var retryable = shouldRetry(retryTest, t);
-            printError(t, currentAttempt);
+            reportError(extensionContext, t, currentAttempt);
 
             if (!retryable || isLast) {
                 state.finished.set(true);
@@ -107,33 +110,40 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
             int delaySeconds = retryTest.delay();
             if (delaySeconds > 0) {
                 try {
+                    // Required to implement the delay. SAME_THREAD execution mode ensures
+                    // this runs on the test thread itself, so blocking is expected.
                     Thread.sleep(delaySeconds * 1000L);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    t.addSuppressed(e);
                     state.finished.set(true);
-                    throw t;
+                    // Rethrow the interruption directly rather than converting it
+                    // to a suppressed exception; the delay itself was interrupted,
+                    // and that's the real reason the retry cannot proceed.
+                    throw e;
                 }
             }
+
+            throw new TestAbortedException(
+                    "Attempt " + currentAttempt + " of " + maxExecutions + " failed and will be retried", t);
         }
     }
 
     @Override
     public boolean supportsTestTemplate(ExtensionContext context) {
         return context.getTestMethod()
-                .filter(m -> m.isAnnotationPresent(RetryTest.class))
+                .flatMap(this::findRetryTest)
                 .isPresent();
     }
 
     @Override
     public Stream<TestTemplateInvocationContext> provideTestTemplateInvocationContexts(ExtensionContext context) {
         var method = context.getRequiredTestMethod();
-        var retry = method.getAnnotation(RetryTest.class);
-        var maxExecutions = retry.value();
-        if (maxExecutions < 1) {
-            throw new ExtensionConfigurationException("@RetryTest value must be >= 1, but was " + maxExecutions);
-        }
+        var retry = findRetryTest(method)
+                .orElseThrow(() -> new ExtensionConfigurationException(
+                        "No @RetryTest annotation found (directly or meta-present) on " + method));
+        validate(method, retry);
 
+        var maxExecutions = retry.value();
         return IntStream.rangeClosed(1, maxExecutions)
                 .mapToObj(i -> new TestTemplateInvocationContext() {
                     @Override
@@ -144,22 +154,39 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
                 });
     }
 
+    /**
+     * Finds {@code @RetryTest} on the method, including as a meta-annotation.
+     * Results are cached to avoid repeated reflection lookups.
+     * Mock-friendly: does not rely on AnnotationUtils which NPEs when a mocked Method returns null arrays.
+     */
+    private Optional<RetryTest> findRetryTest(Method method) {
+        return retryTestCache.computeIfAbsent(method, this::resolveRetryTest);
+    }
+
     private String getMessageRecursively(Throwable e) {
         if (e == null) {
             return "Unknown error";
         }
-        if (e.getLocalizedMessage() != null) {
-            return e.getLocalizedMessage() + " [" + e.getClass().getName() + "]";
+        var seen = Collections.newSetFromMap(new IdentityHashMap<Throwable, Boolean>());
+        var current = e;
+        while (seen.add(current)) {
+            if (current.getLocalizedMessage() != null) {
+                return current.getLocalizedMessage() + " [" + current.getClass().getName() + "]";
+            }
+            var cause = current.getCause();
+            if (cause == null || cause.equals(current)) {
+                return "No message [" + current.getClass().getName() + "]";
+            }
+            current = cause;
         }
-        if (e.getCause() == null || e.getCause().equals(e)) {
-            return "No message [" + e.getClass().getName() + "]";
-        }
-        return getMessageRecursively(e.getCause());
+        // cycle detected
+        return "No message [cycle detected: " + e.getClass().getName() + "]";
     }
 
     private boolean matchesCauseChain(Class<? extends Throwable> type, Throwable throwable) {
+        var seen = Collections.newSetFromMap(new IdentityHashMap<Throwable, Boolean>());
         var current = throwable;
-        while (current != null) {
+        while (current != null && seen.add(current)) {
             if (type.isInstance(current)) {
                 return true;
             }
@@ -168,22 +195,32 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
         return false;
     }
 
-    @SuppressWarnings("PMD.SystemPrintln")
-    private void printError(Throwable e, int count) {
+    private void reportError(ExtensionContext extensionContext, Throwable e, int count) {
         var message = getMessageRecursively(e);
-        System.err.printf("Retry #%d failed (%s thrown): %s%n", count, e.getClass().getName(), message);
+        extensionContext.publishReportEntry(
+                "Retry #" + count + " failed",
+                "Exception: " + e.getClass().getName() + " - " + message);
+    }
+
+    private Optional<RetryTest> resolveRetryTest(Method method) {
+        var direct = method.getAnnotation(RetryTest.class);
+        if (direct != null) {
+            return Optional.of(direct);
+        }
+        // getAnnotations() includes both declared and inherited annotations for methods
+        for (Annotation ann : method.getAnnotations()) {
+            var meta = ann.annotationType().getAnnotation(RetryTest.class);
+            if (meta != null) {
+                return Optional.of(meta);
+            }
+        }
+        return Optional.empty();
     }
 
     private RetryState retryStateFor(ExtensionContext extensionContext, Method method) {
-        var store = storeFor(extensionContext, method);
-        var state = store.get(RetryState.class, RetryState.class);
-        if (state == null) {
-            state = new RetryState();
-            store.put(RetryState.class, state);
-        }
-        return state;
+        return storeFor(extensionContext, method)
+                .computeIfAbsent(RetryState.class, k -> new RetryState(), RetryState.class);
     }
-
 
     private boolean shouldRetry(RetryTest retryTest, Throwable throwable) {
         if (throwable instanceof TestAbortedException) {
@@ -201,11 +238,34 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
         return false;
     }
 
+    /**
+     * Retrieves the store from the parent (method-level) extension context.
+     * This intentional design ensures each test template method invocation shares
+     * a single RetryState. The state is scoped to the method context and is
+     * automatically cleaned up by JUnit when the test completes.
+     */
     private ExtensionContext.Store storeFor(ExtensionContext context, Method method) {
         var templateContext = context.getParent()
                 .orElseThrow(() -> new ExtensionConfigurationException(
                         "RetryExtension requires parent ExtensionContext for " + method));
         return templateContext.getStore(ExtensionContext.Namespace.create(RetryExtension.class, method));
+    }
+
+    private void validate(Method method, RetryTest retryTest) {
+        if (retryTest.value() < 1) {
+            throw new ExtensionConfigurationException(
+                    "@RetryTest value must be >= 1, but was " + retryTest.value() + " on " + method);
+        }
+        if (retryTest.delay() < 0) {
+            throw new ExtensionConfigurationException(
+                    "@RetryTest delay must be >= 0, but was " + retryTest.delay() + " on " + method);
+        }
+        for (var ex : retryTest.withExceptions()) {
+            if (ex == null) {
+                throw new ExtensionConfigurationException(
+                        "@RetryTest withExceptions must not contain null on " + method);
+            }
+        }
     }
 
     private static final class RetryState {
