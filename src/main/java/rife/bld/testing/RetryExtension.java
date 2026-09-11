@@ -19,6 +19,7 @@ package rife.bld.testing;
 import org.junit.jupiter.api.extension.*;
 
 import java.lang.reflect.Method;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 /**
@@ -32,6 +33,21 @@ import java.util.stream.Stream;
  * (including causes in the cause chain) will trigger a retry.
  * <p>
  * If a retry succeeds, the test passes. If all retries fail, the last exception is thrown.
+ *
+ * <h4>Limitations:</h4>
+ * <ul>
+ *     <li>{@code @TestTemplate} requires all possible invocation contexts to be provided
+ *     upfront, so up to {@link RetryTest#value()} invocation contexts are always created,
+ *     even once the outcome has already been decided by an earlier attempt.</li>
+ *     <li>{@code @BeforeEach}/{@code @AfterEach} callbacks and test instance construction
+ *     run for every provided invocation context, including ones skipped after the outcome
+ *     is finalized. This is a cost of the {@code @TestTemplate} SPI and is not avoidable
+ *     without a custom provider that dynamically shrinks the context count, which is not
+ *     supported.</li>
+ *     <li>Retry state is shared across sibling invocations via the parent
+ *     {@link ExtensionContext.Store}, keyed per test method; it assumes invocation contexts
+ *     for the same method run sequentially, not concurrently.</li>
+ * </ul>
  *
  * @author <a href="https://erik.thauvin.net/">Erik C. Thauvin</a>
  * @author <a href="https://glaforge.dev/posts/2024/09/01/a-retryable-junit-5-extension/">Guillaume Laforge</a>
@@ -52,7 +68,8 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
             return;
         }
 
-        var retryTest = methodOpt.get().getAnnotation(RetryTest.class);
+        var method = methodOpt.get();
+        var retryTest = method.getAnnotation(RetryTest.class);
         if (retryTest == null) {
             invocation.proceed();
             return;
@@ -60,42 +77,44 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
 
         int maxExecutions = retryTest.value();
         if (maxExecutions < 1) {
-            throw new ExtensionConfigurationException(
-                    "@RetryTest value must be >= 1, but was " + maxExecutions);
+            throw new ExtensionConfigurationException("@RetryTest value must be >= 1, but was " + maxExecutions);
         }
 
-        int delaySeconds = retryTest.delay();
-        Throwable lastThrown = null;
+        var state = retryStateFor(extensionContext, method);
 
-        for (var i = 1; i <= maxExecutions; i++) {
-            try {
-                invocation.proceed();
-                return;
-            } catch (Throwable t) {
-                lastThrown = t;
+        if (state.finished) {
+            // Outcome already decided by an earlier invocation; don't re-run the method.
+            return;
+        }
+        state.attempt++;
 
-                // If exception is not accepted for retry, fail fast
-                if (!shouldRetry(retryTest, t)) {
+        try {
+            invocation.proceed();
+            state.finished = true;
+        } catch (Throwable t) {
+            var isLast = state.attempt >= maxExecutions;
+            var retryable = shouldRetry(retryTest, t);
+            printError(t, state.attempt);
+
+            if (!retryable || isLast) {
+                state.finished = true;
+                throw t;
+            }
+
+            int delaySeconds = retryTest.delay();
+            if (delaySeconds > 0) {
+                try {
+                    Thread.sleep(delaySeconds * 1000L);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    t.addSuppressed(e);
+                    state.finished = true;
                     throw t;
                 }
-
-                if (i < maxExecutions) {
-                    printError(lastThrown, i);
-                    if (delaySeconds > 0) {
-                        try {
-                            Thread.sleep(delaySeconds * 1000L);
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            lastThrown.addSuppressed(e);
-                            throw lastThrown;
-                        }
-                    }
-                }
             }
+            // swallow: retryable, attempts remain — this invocation reports as passed,
+            // and the next invocation context is given to JUnit
         }
-
-        printError(lastThrown, maxExecutions);
-        throw lastThrown;
     }
 
     @Override
@@ -109,13 +128,15 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
     public Stream<TestTemplateInvocationContext> provideTestTemplateInvocationContexts(ExtensionContext context) {
         var method = context.getRequiredTestMethod();
         var retry = method.getAnnotation(RetryTest.class);
+        var maxExecutions = Math.max(retry.value(), 1);
 
-        return Stream.of(new TestTemplateInvocationContext() {
-            @Override
-            public String getDisplayName(int invocationIndex) {
-                return retry.name().isEmpty() ? method.getName() : retry.name();
-            }
-        });
+        return IntStream.rangeClosed(1, maxExecutions)
+                .mapToObj(i -> new TestTemplateInvocationContext() {
+                    @Override
+                    public String getDisplayName(int invocationIndex) {
+                        return retry.name().isEmpty() ? method.getName() : retry.name();
+                    }
+                });
     }
 
     private String getMessageRecursively(Throwable e) {
@@ -148,6 +169,16 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
         System.err.printf("Retry #%d failed (%s thrown): %s%n", count, e.getClass().getName(), message);
     }
 
+    private RetryState retryStateFor(ExtensionContext extensionContext, Method method) {
+        var store = storeFor(extensionContext, method);
+        var state = store.get(RetryState.class, RetryState.class);
+        if (state == null) {
+            state = new RetryState();
+            store.put(RetryState.class, state);
+        }
+        return state;
+    }
+
     private boolean shouldRetry(RetryTest retryTest, Throwable throwable) {
         var withExceptions = retryTest.withExceptions();
         if (withExceptions == null || withExceptions.length == 0) {
@@ -159,5 +190,16 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
             }
         }
         return false;
+    }
+
+    private ExtensionContext.Store storeFor(ExtensionContext context, Method method) {
+        var templateContext = context.getParent().orElse(context);
+        return templateContext.getStore(ExtensionContext.Namespace.create(RetryExtension.class, method));
+    }
+
+    private static final class RetryState {
+
+        int attempt;
+        boolean finished;
     }
 }
