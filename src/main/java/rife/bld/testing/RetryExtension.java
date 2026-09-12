@@ -22,10 +22,7 @@ import org.opentest4j.TestAbortedException;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
-import java.util.Collections;
-import java.util.IdentityHashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,18 +35,18 @@ import java.util.stream.Stream;
  * Implements both {@link TestTemplateInvocationContextProvider} and {@link InvocationInterceptor}
  * to keep the implementation in a single extension.
  * <p>
- * <b>Bug fix - swallowed invocations:</b> Earlier versions swallowed a retryable exception
- * and returned normally, causing JUnit to count the invocation as {@code successful}.
- * That led to two visible bugs:
- * <ol>
- *   <li>IDE rerun of a single invocation:
- *       {@code --select-unique-id='.../invocation:#1'} on an always-failing test reported
- *       {@code 1 successful} because attempt #1 was swallowed.</li>
- *   <li>Count inflation: {@code @RetryTest(3)} passing first time contributed 3 greens,
- *       and always-failing contributed 2 passes + 1 failure.</li>
- * </ol>
- * The fix is to throw {@link TestAbortedException} for retryable intermediate failures
- * instead of swallowing. Aborted invocations are not counted as success.
+ * <b>Limitations:</b>
+ * <ul>
+ *   <li>All {@code value()} invocation contexts are created up front. A per-invocation
+ *       {@link ExecutionCondition} disables an invocation once the outcome for the method
+ *       is already decided, so unused invocations are reported as {@code disabled} rather
+ *       than {@code passed} or {@code failed}.</li>
+ *   <li>{@code @BeforeEach} and {@code @AfterEach} failures share the same attempt budget
+ *       and retry policy as the test method itself. An {@code @AfterEach} failure that
+ *       occurs after the invocation's outcome is already decided (the test passed, or an
+ *       earlier phase's failure was ruled final) is reported as a plain failure rather
+ *       than offered a retry, since no further invocation will run at that point.</li>
+ * </ul>
  *
  * @author <a href="https://erik.thauvin.net/">Erik C. Thauvin</a>
  * @see RetryTest
@@ -60,14 +57,138 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
     private final Map<Method, Optional<RetryTest>> retryTestCache = new ConcurrentHashMap<>();
 
     /**
+     * Intercepts {@code @BeforeEach} so a setup failure is governed by the same attempt
+     * budget and {@code withExceptions} policy as the test method itself, instead of
+     * running {@code maxExecutions} times independently of the retry outcome.
+     */
+    @Override
+    public void interceptBeforeEachMethod(Invocation<Void> invocation,
+                                          ReflectiveInvocationContext<Method> invocationContext,
+                                          ExtensionContext extensionContext)
+            throws Throwable {
+        interceptLifecycleInvocation(invocation, extensionContext, false);
+    }
+
+    /**
      * Intercepts each test-template method invocation to apply retry logic.
      */
     @Override
-    @SuppressWarnings({"PMD.DoNotUseThreads", "PMD.AvoidCatchingGenericException", "PMD.PreserveStackTrace"})
-    @SuppressFBWarnings("EXS_EXCEPTION_SOFTENING_HAS_CHECKED")
     public void interceptTestTemplateMethod(Invocation<Void> invocation,
                                             ReflectiveInvocationContext<Method> invocationContext,
                                             ExtensionContext extensionContext)
+            throws Throwable {
+        interceptLifecycleInvocation(invocation, extensionContext, true);
+    }
+
+    /**
+     * Intercepts {@code @AfterEach}. Unlike {@code @BeforeEach}, this can run in an
+     * invocation where {@code state.finished} is already {@code true} — set moments
+     * earlier, in this same invocation, by the test method passing or by its failure
+     * being ruled final. {@link #interceptLifecycleInvocation} accounts for that: once
+     * finished is true no further invocation will occur regardless of what happens here,
+     * so an {@code @AfterEach} failure at that point is let through as a plain failure
+     * rather than offered a retry it can never receive.
+     */
+    @Override
+    public void interceptAfterEachMethod(Invocation<Void> invocation,
+                                         ReflectiveInvocationContext<Method> invocationContext,
+                                         ExtensionContext extensionContext)
+            throws Throwable {
+        interceptLifecycleInvocation(invocation, extensionContext, false);
+    }
+
+    @Override
+    public boolean supportsTestTemplate(ExtensionContext context) {
+        return context.getTestMethod()
+                .flatMap(this::findRetryTest)
+                .isPresent();
+    }
+
+    @Override
+    public Stream<TestTemplateInvocationContext> provideTestTemplateInvocationContexts(ExtensionContext context) {
+        var method = context.getRequiredTestMethod();
+        var retry = findValidatedRetryTest(method)
+                .orElseThrow(() -> new ExtensionConfigurationException(
+                        "No @RetryTest annotation found (directly or meta-present) on " + method));
+
+        var maxExecutions = retry.value();
+        var gate = retryGate(method);
+        return IntStream.rangeClosed(1, maxExecutions)
+                .mapToObj(i -> new TestTemplateInvocationContext() {
+                    @Override
+                    public String getDisplayName(int invocationIndex) {
+                        var baseName = retry.name().isEmpty() ? method.getName() : retry.name();
+                        return baseName + " [" + invocationIndex + "/" + maxExecutions + "]";
+                    }
+
+                    @Override
+                    public List<Extension> getAdditionalExtensions() {
+                        return List.of(gate);
+                    }
+                });
+    }
+
+    /**
+     * Finds {@code @RetryTest} on the method, including as a meta-annotation.
+     * Results are cached to avoid repeated reflection lookups.
+     * Mock-friendly: does not rely on AnnotationUtils which NPEs when a mocked Method returns null arrays.
+     */
+    private Optional<RetryTest> findRetryTest(Method method) {
+        return retryTestCache.computeIfAbsent(method, this::resolveRetryTest);
+    }
+
+    /**
+     * {@link #findRetryTest(Method)}, validated. Each of the three entry points
+     * (provider, gate, lifecycle interceptor) calls this independently rather than
+     * validating once and threading the result through, since the check itself is cheap
+     * and this keeps each entry point self-contained.
+     */
+    private Optional<RetryTest> findValidatedRetryTest(Method method) {
+        var retryTestOpt = findRetryTest(method);
+        retryTestOpt.ifPresent(retryTest -> validate(method, retryTest));
+        return retryTestOpt;
+    }
+
+    private String getMessageRecursively(Throwable e) {
+        if (e == null) {
+            return "Unknown error";
+        }
+        var seen = Collections.newSetFromMap(new IdentityHashMap<Throwable, Boolean>());
+        var current = e;
+        while (seen.add(current)) {
+            if (current.getLocalizedMessage() != null) {
+                return current.getLocalizedMessage() + " [" + current.getClass().getName() + "]";
+            }
+            var cause = current.getCause();
+            if (cause == null || cause.equals(current)) {
+                return "No message [" + current.getClass().getName() + "]";
+            }
+            current = cause;
+        }
+        // cycle detected
+        return "No message [cycle detected: " + e.getClass().getName() + "]";
+    }
+
+    /**
+     * Shared retry handling for {@code @BeforeEach}, {@code @AfterEach}, and the
+     * test-template method. The attempt counter is advanced once per invocation by the
+     * {@link ExecutionCondition} returned from {@link #retryGate(Method)}, before any
+     * phase runs; this method only reads it. Only {@code markSuccessOnCompletion} (the
+     * test-template phase) marks the invocation as decided on success, so a passing
+     * {@code @BeforeEach} does not itself end retries.
+     * <p>
+     * If {@code state.finished} is already {@code true} on entry — set by an earlier
+     * phase of this same invocation — the retry decision has already been made and no
+     * further invocation will run, so this phase's outcome is passed through as-is
+     * instead of being offered a retry it can never receive. This only actually arises
+     * for {@code @AfterEach}: {@link #retryGate(Method)} keeps {@code @BeforeEach} and
+     * the test method from starting at all once finished is true.
+     */
+    @SuppressWarnings({"PMD.DoNotUseThreads", "PMD.AvoidCatchingGenericException", "PMD.PreserveStackTrace"})
+    @SuppressFBWarnings("EXS_EXCEPTION_SOFTENING_NO_CONSTRAINTS")
+    private void interceptLifecycleInvocation(Invocation<Void> invocation,
+                                              ExtensionContext extensionContext,
+                                              boolean markSuccessOnCompletion)
             throws Throwable {
         var methodOpt = extensionContext.getTestMethod();
         if (methodOpt.isEmpty()) {
@@ -76,27 +197,27 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
         }
 
         var method = methodOpt.get();
-        var retryTestOpt = findRetryTest(method);
+        var retryTestOpt = findValidatedRetryTest(method);
         if (retryTestOpt.isEmpty()) {
             invocation.proceed();
             return;
         }
         var retryTest = retryTestOpt.get();
-
-        validate(method, retryTest);
-
-        var maxExecutions = retryTest.value();
         var state = retryStateFor(extensionContext, method);
 
         if (state.finished.get()) {
-            invocation.skip();
+            invocation.proceed();
             return;
         }
-        var currentAttempt = state.attempt.incrementAndGet();
+
+        var maxExecutions = retryTest.value();
+        var currentAttempt = state.attempt.get();
 
         try {
             invocation.proceed();
-            state.finished.set(true);
+            if (markSuccessOnCompletion) {
+                state.finished.set(true);
+            }
         } catch (Throwable t) {
             var isLast = currentAttempt >= maxExecutions;
             var retryable = shouldRetry(retryTest, t);
@@ -126,61 +247,6 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
             throw new TestAbortedException(
                     "Attempt " + currentAttempt + " of " + maxExecutions + " failed and will be retried", t);
         }
-    }
-
-    @Override
-    public boolean supportsTestTemplate(ExtensionContext context) {
-        return context.getTestMethod()
-                .flatMap(this::findRetryTest)
-                .isPresent();
-    }
-
-    @Override
-    public Stream<TestTemplateInvocationContext> provideTestTemplateInvocationContexts(ExtensionContext context) {
-        var method = context.getRequiredTestMethod();
-        var retry = findRetryTest(method)
-                .orElseThrow(() -> new ExtensionConfigurationException(
-                        "No @RetryTest annotation found (directly or meta-present) on " + method));
-        validate(method, retry);
-
-        var maxExecutions = retry.value();
-        return IntStream.rangeClosed(1, maxExecutions)
-                .mapToObj(i -> new TestTemplateInvocationContext() {
-                    @Override
-                    public String getDisplayName(int invocationIndex) {
-                        var baseName = retry.name().isEmpty() ? method.getName() : retry.name();
-                        return baseName + " [" + invocationIndex + "/" + maxExecutions + "]";
-                    }
-                });
-    }
-
-    /**
-     * Finds {@code @RetryTest} on the method, including as a meta-annotation.
-     * Results are cached to avoid repeated reflection lookups.
-     * Mock-friendly: does not rely on AnnotationUtils which NPEs when a mocked Method returns null arrays.
-     */
-    private Optional<RetryTest> findRetryTest(Method method) {
-        return retryTestCache.computeIfAbsent(method, this::resolveRetryTest);
-    }
-
-    private String getMessageRecursively(Throwable e) {
-        if (e == null) {
-            return "Unknown error";
-        }
-        var seen = Collections.newSetFromMap(new IdentityHashMap<Throwable, Boolean>());
-        var current = e;
-        while (seen.add(current)) {
-            if (current.getLocalizedMessage() != null) {
-                return current.getLocalizedMessage() + " [" + current.getClass().getName() + "]";
-            }
-            var cause = current.getCause();
-            if (cause == null || cause.equals(current)) {
-                return "No message [" + current.getClass().getName() + "]";
-            }
-            current = cause;
-        }
-        // cycle detected
-        return "No message [cycle detected: " + e.getClass().getName() + "]";
     }
 
     private boolean matchesCauseChain(Class<? extends Throwable> type, Throwable throwable) {
@@ -215,6 +281,30 @@ public class RetryExtension implements TestTemplateInvocationContextProvider, In
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Gates each invocation context so that once the outcome for the method is decided
+     * (a passing invocation, or a non-retryable/last-attempt failure) the remaining,
+     * already-created invocation contexts are reported as {@code disabled} instead of
+     * running and being counted as {@code passed}. Also advances the shared attempt
+     * counter exactly once per invocation, before {@code @BeforeEach} or the test method
+     * runs, so {@link #interceptLifecycleInvocation} only needs to read it.
+     */
+    private ExecutionCondition retryGate(Method method) {
+        return context -> {
+            var retryTestOpt = findValidatedRetryTest(method);
+            if (retryTestOpt.isEmpty()) {
+                return ConditionEvaluationResult.enabled("No @RetryTest on " + method);
+            }
+            var state = retryStateFor(context, method);
+            if (state.finished.get()) {
+                return ConditionEvaluationResult.disabled(
+                        "Retry outcome for " + method.getName() + " already decided");
+            }
+            var currentAttempt = state.attempt.incrementAndGet();
+            return ConditionEvaluationResult.enabled("Attempt " + currentAttempt + " of " + method.getName());
+        };
     }
 
     private RetryState retryStateFor(ExtensionContext extensionContext, Method method) {

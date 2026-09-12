@@ -17,10 +17,8 @@
 package rife.bld.testing;
 
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.extension.ExtensionConfigurationException;
-import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.api.extension.*;
 import org.junit.jupiter.api.extension.InvocationInterceptor.Invocation;
-import org.junit.jupiter.api.extension.ReflectiveInvocationContext;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.opentest4j.TestAbortedException;
@@ -89,8 +87,32 @@ class RetryExtensionTest {
         when(mockExtensionContext.getStore(any())).thenReturn(store);
     }
 
+    // ---- helpers that mirror JUnit's execution order ----
+
+    private void callAfterEach(Invocation<Void> inv) throws Throwable {
+        retryExtension.interceptAfterEachMethod(inv, mockInvocationContext, mockExtensionContext);
+    }
+
     private void callAttempt(Invocation<Void> inv) throws Throwable {
+        var result = evaluateGate();
+        if (result.isDisabled()) {
+            inv.skip();
+            return;
+        }
         retryExtension.interceptTestTemplateMethod(inv, mockInvocationContext, mockExtensionContext);
+    }
+
+    private void callBeforeEach(Invocation<Void> inv) throws Throwable {
+        var result = evaluateGate();
+        if (result.isDisabled()) {
+            inv.skip();
+            return;
+        }
+        retryExtension.interceptBeforeEachMethod(inv, mockInvocationContext, mockExtensionContext);
+    }
+
+    private ConditionEvaluationResult evaluateGate() throws Exception {
+        return retryGateForCurrentMethod().evaluateExecutionCondition(mockExtensionContext);
     }
 
     @Test
@@ -112,7 +134,7 @@ class RetryExtensionTest {
         assertThrows(TestAbortedException.class, () -> callAttempt(inv1));
         assertDoesNotThrow(() -> callAttempt(inv2));
         assertDoesNotThrow(() -> callAttempt(inv3));
-        verify(inv3, times(1)).skip();
+        verify(inv3, never()).proceed();
     }
 
     @Test
@@ -159,6 +181,13 @@ class RetryExtensionTest {
         assertThrows(RuntimeException.class, () -> callAttempt(inv3));
     }
 
+    @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
+    private ExecutionCondition retryGateForCurrentMethod() throws Exception {
+        var m = RetryExtension.class.getDeclaredMethod("retryGate", Method.class);
+        m.setAccessible(true);
+        return (ExecutionCondition) m.invoke(retryExtension, mockExtensionContext.getRequiredTestMethod());
+    }
+
     @Test
     void retrySuccess() throws Throwable {
         setMethod("default3");
@@ -171,7 +200,7 @@ class RetryExtensionTest {
         assertThrows(TestAbortedException.class, () -> callAttempt(inv1));
         assertDoesNotThrow(() -> callAttempt(inv2));
         assertDoesNotThrow(() -> callAttempt(inv3));
-        verify(inv3).skip();
+        verify(inv3, never()).proceed();
     }
 
     @Test
@@ -240,18 +269,15 @@ class RetryExtensionTest {
         Thread.currentThread().interrupt();
         try {
             var thrown = assertThrows(InterruptedException.class, () -> callAttempt(inv1));
-            // first failure triggers sleep -> interrupted, so original is rethrown, not aborted
             assertEquals("sleep interrupted", thrown.getMessage());
-            // InterruptedException must not have a suppressed exception (unlike old implementation)
             assertEquals(0, thrown.getSuppressed().length,
                     "InterruptedException should not carry suppressed exceptions");
         } finally {
             var ignored = Thread.interrupted();
         }
-        // Second invocation should be skipped because state.finished was set
         var inv2 = mock(Invocation.class);
         assertDoesNotThrow(() -> callAttempt(inv2));
-        verify(inv2, times(1)).skip();
+        verify(inv2, never()).proceed();
     }
 
     @Test
@@ -301,7 +327,7 @@ class RetryExtensionTest {
         var inv2 = mock(Invocation.class);
         assertDoesNotThrow(() -> callAttempt(inv2));
         verify(inv2, never()).proceed();
-        verify(inv2, times(1)).skip();
+        verify(inv2, never()).proceed();
     }
 
     private void setMethod(String name) throws Exception {
@@ -327,32 +353,32 @@ class RetryExtensionTest {
 
         @RetryTest(3)
         void default3() {
-            // keep empty
+            // no-op
         }
 
         @RetryTest(value = 3, delay = 1)
         void delay1() {
-            // keep empty
+            // no-op
         }
 
         @RetryTest(value = 3, delay = 0, withExceptions = IOException.class)
         void ioOnly() {
-            // keep empty
+            // no-op
         }
 
         @SuppressWarnings("unused")
         void noAnnotation() {
-            // keep empty
+            // no-op
         }
 
         @RetryTest(1)
         void one() {
-            // keep empty
+            // no-op
         }
 
         @RetryTest(0)
         void zero() {
-            // keep empty
+            // no-op
         }
     }
 
@@ -364,11 +390,9 @@ class RetryExtensionTest {
         @DisplayName("getMessageRecursively does not StackOverflow on cyclic cause chain")
         void doesNotOverflowOnCycle() {
             var ex1 = new RuntimeException("ex1");
-            var ex2 = new RuntimeException("ex2"); // ex2 -> ex1
-            ex1.initCause(ex2); // ex1 -> ex2 -> ex1 = cycle, only one initCause call
-
-            assertDoesNotThrow(() -> invokeGetMessageRecursively(ex1),
-                    "cycle should not cause StackOverflowError");
+            var ex2 = new RuntimeException("ex2");
+            ex1.initCause(ex2);
+            assertDoesNotThrow(() -> invokeGetMessageRecursively(ex1));
         }
 
         @Test
@@ -376,7 +400,7 @@ class RetryExtensionTest {
         void handlesNoMessage() throws Exception {
             var ex = new RuntimeException();
             var msg = invokeGetMessageRecursively(ex);
-            assertTrue(msg.startsWith("No message ["), "got: " + msg);
+            assertTrue(msg.startsWith("No message ["));
         }
 
         @Test
@@ -396,31 +420,24 @@ class RetryExtensionTest {
         @Test
         @DisplayName("matchesCauseChain does not StackOverflow on cyclic chain")
         void matchesCauseChainDoesNotOverflowOnCycle() throws Throwable {
-            setMethod("ioOnly"); // withExceptions = IOException
+            setMethod("ioOnly");
             var ex1 = new RuntimeException("ex1");
-            var ex2 = new IOException("io in cycle"); // ex2 -> ex1
-            ex1.initCause(ex2); // ex1 -> ex2 -> ex1 = cycle, only one initCause call
-
+            var ex2 = new IOException("io in cycle");
+            ex1.initCause(ex2);
             var inv = mock(Invocation.class);
             doThrow(ex1).when(inv).proceed();
-
-            // should be retryable (contains IOException in cycle) and not overflow
             assertThrows(TestAbortedException.class, () -> callAttempt(inv));
         }
 
         @Test
         @DisplayName("Retry with cyclic exception chain does not overflow in printError path")
         void retryWithCyclicDoesNotOverflowEndToEnd() throws Throwable {
-            setMethod("one"); // no filter, any exception retryable
+            setMethod("one");
             var ex1 = new RuntimeException();
-            var ex2 = new RuntimeException(ex1); // ex2 -> ex1
-            ex1.initCause(ex2); // ex1 -> ex2 -> ex1 = cycle, only one initCause call
-
+            var ex2 = new RuntimeException(ex1);
+            ex1.initCause(ex2);
             var inv = mock(Invocation.class);
             doThrow(ex1).when(inv).proceed();
-
-            // intercept catches, calls printError -> getMessageRecursively
-            // must not throw StackOverflowError, should throw original on last attempt
             var thrown = assertThrows(RuntimeException.class, () -> callAttempt(inv));
             assertSame(ex1, thrown);
         }
@@ -441,7 +458,173 @@ class RetryExtensionTest {
             var mid = new RuntimeException(null, root);
             var top = new RuntimeException(null, mid);
             var msg = invokeGetMessageRecursively(top);
-            assertTrue(msg.contains("root cause"), "should find root message, got: " + msg);
+            assertTrue(msg.contains("root cause"));
+        }
+    }
+
+    @Nested
+    @DisplayName("BeforeEach and AfterEach lifecycle")
+    class LifecycleHooks {
+
+        @Test
+        @DisplayName("AfterEach failure after final failure is plain failure")
+        void afterEachFailureAfterFinalFailureIsPlainFailure() throws Throwable {
+            setMethod("one");
+            var testInv = mock(Invocation.class);
+            var afterInv = mock(Invocation.class);
+            doThrow(new RuntimeException("test fail")).when(testInv).proceed();
+            doThrow(new RuntimeException("after fail")).when(afterInv).proceed();
+            assertThrows(RuntimeException.class, () -> callAttempt(testInv));
+            var afterThrown = assertThrows(RuntimeException.class, () -> callAfterEach(afterInv));
+            assertEquals("after fail", afterThrown.getMessage());
+        }
+
+        @Test
+        @DisplayName("AfterEach failure after test success is plain failure (no retry)")
+        void afterEachFailureAfterSuccessIsPlainFailure() throws Throwable {
+            setMethod("default3");
+            var testInv = mock(Invocation.class);
+            var afterInv = mock(Invocation.class);
+            doAnswer(a -> null).when(testInv).proceed();
+            doThrow(new RuntimeException("cleanup failed")).when(afterInv).proceed();
+            assertDoesNotThrow(() -> callAttempt(testInv));
+            var thrown = assertThrows(RuntimeException.class, () -> callAfterEach(afterInv));
+            assertEquals("cleanup failed", thrown.getMessage());
+            var nextTest = mock(Invocation.class);
+            assertDoesNotThrow(() -> callAttempt(nextTest));
+            verify(nextTest, never()).proceed();
+        }
+
+        @Test
+        @DisplayName("AfterEach failure before outcome decided is retryable")
+        void afterEachFailureBeforeOutcomeDecidedIsRetryable() throws Throwable {
+            setMethod("default3");
+            var after1 = mock(Invocation.class);
+            doThrow(new IOException("after flaky")).when(after1).proceed();
+            var gateResult = evaluateGate();
+            assertFalse(gateResult.isDisabled());
+            assertThrows(TestAbortedException.class, () -> callAfterEach(after1));
+
+            // second attempt succeeds
+            setMethod("default3");
+            var b = mock(Invocation.class);
+            var t = mock(Invocation.class);
+            var a = mock(Invocation.class);
+            doAnswer(x -> null).when(b).proceed();
+            doAnswer(x -> null).when(t).proceed();
+            doAnswer(x -> null).when(a).proceed();
+            assertDoesNotThrow(() -> callBeforeEach(b));
+            assertDoesNotThrow(() -> callAttempt(t));
+            assertDoesNotThrow(() -> callAfterEach(a));
+        }
+
+        @Test
+        @DisplayName("AfterEach non-retryable fails fast")
+        void afterEachNonRetryableFailsFast() throws Throwable {
+            setMethod("ioOnly");
+            var after1 = mock(Invocation.class);
+            doThrow(new RuntimeException("not io")).when(after1).proceed();
+            var gateResult = evaluateGate();
+            assertFalse(gateResult.isDisabled());
+            assertThrows(RuntimeException.class, () -> callAfterEach(after1));
+
+            var next = mock(Invocation.class);
+            assertDoesNotThrow(() -> callAttempt(next));
+            verify(next, never()).proceed();
+        }
+
+        @Test
+        @DisplayName("AfterEach retry exhausted")
+        void afterEachRetryExhausted() throws Throwable {
+            setMethod("default3");
+            var a1 = mock(Invocation.class);
+            var a2 = mock(Invocation.class);
+            var a3 = mock(Invocation.class);
+            doThrow(new RuntimeException("fail")).when(a1).proceed();
+            doThrow(new RuntimeException("fail")).when(a2).proceed();
+            doThrow(new RuntimeException("fail")).when(a3).proceed();
+
+            // need gate evaluations for each attempt
+            assertThrows(TestAbortedException.class, () -> {
+                evaluateGate();
+                callAfterEach(a1);
+            });
+            assertThrows(TestAbortedException.class, () -> {
+                evaluateGate();
+                callAfterEach(a2);
+            });
+            assertThrows(RuntimeException.class, () -> {
+                evaluateGate();
+                callAfterEach(a3);
+            });
+        }
+
+        @Test
+        @DisplayName("AfterEach with no annotation just proceeds")
+        void afterEachWithNoAnnotation() throws Throwable {
+            setMethod("noAnnotation");
+            var afterInv = mock(Invocation.class);
+            doAnswer(a -> null).when(afterInv).proceed();
+            assertDoesNotThrow(() -> callAfterEach(afterInv));
+            verify(afterInv, times(1)).proceed();
+        }
+
+        @Test
+        @DisplayName("BeforeEach exhausts retries")
+        void beforeEachExhaustsRetries() throws Throwable {
+            setMethod("default3");
+            var b1 = mock(Invocation.class);
+            var b2 = mock(Invocation.class);
+            var b3 = mock(Invocation.class);
+            doThrow(new RuntimeException("fail")).when(b1).proceed();
+            doThrow(new RuntimeException("fail")).when(b2).proceed();
+            doThrow(new RuntimeException("fail")).when(b3).proceed();
+            assertThrows(TestAbortedException.class, () -> callBeforeEach(b1));
+            assertThrows(TestAbortedException.class, () -> callBeforeEach(b2));
+            assertThrows(RuntimeException.class, () -> callBeforeEach(b3));
+        }
+
+        @Test
+        @DisplayName("BeforeEach failure shares attempt budget and is retryable")
+        void beforeEachFailureIsRetryable() throws Throwable {
+            setMethod("default3");
+            var before1 = mock(Invocation.class);
+            var before2 = mock(Invocation.class);
+            var test2 = mock(Invocation.class);
+
+            doThrow(new RuntimeException("setup flaky")).when(before1).proceed();
+            doAnswer(a -> null).when(before2).proceed();
+            doAnswer(a -> null).when(test2).proceed();
+
+            assertThrows(TestAbortedException.class, () -> callBeforeEach(before1));
+            assertDoesNotThrow(() -> callBeforeEach(before2));
+            assertDoesNotThrow(() -> callAttempt(test2));
+
+            var inv3 = mock(Invocation.class);
+            assertDoesNotThrow(() -> callAttempt(inv3));
+            verify(inv3, never()).proceed();
+        }
+
+        @Test
+        @DisplayName("BeforeEach non-retryable failure fails fast and skips remaining")
+        void beforeEachNonRetryableFailsFast() throws Throwable {
+            setMethod("ioOnly");
+            var before1 = mock(Invocation.class);
+            doThrow(new RuntimeException("not io")).when(before1).proceed();
+            assertThrows(RuntimeException.class, () -> callBeforeEach(before1));
+            var inv2 = mock(Invocation.class);
+            assertDoesNotThrow(() -> callAttempt(inv2));
+            verify(inv2, never()).proceed();
+        }
+
+        @Test
+        @DisplayName("BeforeEach with no annotation just proceeds")
+        void beforeEachWithNoAnnotation() throws Throwable {
+            setMethod("noAnnotation");
+            var beforeInv = mock(Invocation.class);
+            doAnswer(a -> null).when(beforeInv).proceed();
+            assertDoesNotThrow(() -> callBeforeEach(beforeInv));
+            verify(beforeInv, times(1)).proceed();
         }
     }
 
@@ -540,7 +723,7 @@ class RetryExtensionTest {
             assertEquals("non-retryable", thrown.getMessage());
             assertDoesNotThrow(() -> callAttempt(inv2));
             verify(inv2, never()).proceed();
-            verify(inv2, times(1)).skip();
+            verify(inv2, never()).proceed();
         }
 
         @Test
@@ -555,9 +738,9 @@ class RetryExtensionTest {
             assertDoesNotThrow(() -> callAttempt(inv2));
             assertDoesNotThrow(() -> callAttempt(inv3));
             verify(inv2, never()).proceed();
-            verify(inv2, times(1)).skip();
+            verify(inv2, never()).proceed();
             verify(inv3, never()).proceed();
-            verify(inv3, times(1)).skip();
+            verify(inv3, never()).proceed();
         }
     }
 }
